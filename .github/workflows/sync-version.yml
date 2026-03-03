@@ -42,7 +42,7 @@ jobs:
       - name: Check for existing sync PR
         id: check_pr
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_FORGE_IT_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_FORGE_TOKEN }}
           BRANCH_NAME: sync/release-${{ steps.versions.outputs.CURRENT_VERSION }}
         run: |
           existing_pr=$(gh pr list --head "${BRANCH_NAME}" --base develop --state open --json number --jq '.[0].number')
@@ -85,7 +85,7 @@ jobs:
       - name: Push sync branch
         if: steps.check_pr.outputs.exists != 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_FORGE_IT_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_FORGE_TOKEN }}
           BRANCH_NAME: sync/release-${{ steps.versions.outputs.CURRENT_VERSION }}
         run: |
           git fetch origin "${BRANCH_NAME}" || true
@@ -96,7 +96,7 @@ jobs:
       - name: Open sync pull request
         if: steps.check_pr.outputs.exists != 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_FORGE_IT_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_FORGE_TOKEN }}
           CURRENT_VERSION: ${{ steps.versions.outputs.CURRENT_VERSION }}
           NEXT_VERSION: ${{ steps.versions.outputs.NEXT_VERSION }}
           BRANCH_NAME: sync/release-${{ steps.versions.outputs.CURRENT_VERSION }}
