@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   build:
@@ -23,23 +24,23 @@ jobs:
           java-version: 21
           cache: maven
 
-      - name: Prepare Docker for Testcontainers
+      - name: Setup Maven settings
         run: |
-          docker version
-          rm -f ~/.testcontainers.properties
-          cat > ~/.testcontainers.properties <<'EOF'
-          docker.client.strategy=org.testcontainers.dockerclient.UnixSocketClientProviderStrategy
-          docker.host=unix:///var/run/docker.sock
-          EOF
-          echo "DOCKER_HOST=unix:///var/run/docker.sock" >> "$GITHUB_ENV"
-          echo "API_VERSION=$(docker version --format '{{.Server.APIVersion}}')" >> "$GITHUB_ENV"
-          echo "TESTCONTAINERS_DOCKER_CLIENT_STRATEGY=org.testcontainers.dockerclient.UnixSocketClientProviderStrategy" >> "$GITHUB_ENV"
-          echo "TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock" >> "$GITHUB_ENV"
-          echo "JAVA_TOOL_OPTIONS=-Dapi.version=$(docker version --format '{{.Server.APIVersion}}') -Ddocker.host=unix:///var/run/docker.sock" >> "$GITHUB_ENV"
+          mkdir -p ~/.m2
+          echo "<settings>
+                  <servers>
+                    <server>
+                      <id>github</id>
+                      <username>${{ github.actor }}</username>
+                      <password>${{ secrets.GH_FORGE_TOKEN }}</password>
+                    </server>
+                    <server>
+                      <id>github-app-afesox</id>
+                      <username>${{ github.actor }}</username>
+                      <password>${{ secrets.GH_FORGE_TOKEN }}</password>
+                    </server>
+                  </servers>
+                </settings>" > ~/.m2/settings.xml
 
       - name: Build with tests
-        run: |
-          echo "Using DOCKER_HOST=${DOCKER_HOST}"
-          echo "Using API_VERSION=${API_VERSION}"
-          echo "Using JAVA_TOOL_OPTIONS=${JAVA_TOOL_OPTIONS}"
-          ./mvnw -B -ntp clean install
+        run: mvn -B -ntp clean install
