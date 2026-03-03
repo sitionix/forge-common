@@ -35,7 +35,7 @@ jobs:
                       <password>${{ secrets.GH_FORGE_TOKEN }}</password>
                     </server>
                     <server>
-                      <id>github-app-afesox</id>
+                      <id>github-forge-it</id>
                       <username>${{ github.actor }}</username>
                       <password>${{ secrets.GH_FORGE_TOKEN }}</password>
                     </server>
