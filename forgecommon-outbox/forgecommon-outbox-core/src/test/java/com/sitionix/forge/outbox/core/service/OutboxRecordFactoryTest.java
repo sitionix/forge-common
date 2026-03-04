@@ -32,7 +32,9 @@ class OutboxRecordFactoryTest {
                 10L,
                 Instant.parse("2026-01-01T10:01:00Z"),
                 Map.of("header-1", "value-1"),
-                Map.of("meta-1", "value-1"));
+                Map.of("meta-1", "value-1"),
+                "SYSTEM",
+                "1");
 
         //when
         final OutboxRecord actual = this.outboxRecordFactory.create(payload, "EMAIL_VERIFY");
@@ -57,7 +59,14 @@ class OutboxRecordFactoryTest {
     @Test
     void givenPayloadWithoutOptionalData_whenCreate_thenApplyDefaults() {
         //given
-        final TestPayload payload = new TestPayload(null, null, null, null, null);
+        final TestPayload payload = new TestPayload(
+                null,
+                null,
+                null,
+                null,
+                null,
+                "SYSTEM",
+                "1");
 
         //when
         final OutboxRecord actual = this.outboxRecordFactory.create(payload, "EMAIL_VERIFY");
@@ -65,8 +74,8 @@ class OutboxRecordFactoryTest {
         //then
         assertThat(actual.getAggregateType()).isNull();
         assertThat(actual.getAggregateId()).isNull();
-        assertThat(actual.getInitiatorType()).isNull();
-        assertThat(actual.getInitiatorId()).isNull();
+        assertThat(actual.getInitiatorType()).isEqualTo("SYSTEM");
+        assertThat(actual.getInitiatorId()).isEqualTo("1");
         assertThat(actual.getHeaders()).isEqualTo(Map.of());
         assertThat(actual.getMetadata()).isEqualTo(Map.of());
         assertThat(actual.getNextAttemptAt()).isEqualTo(Instant.parse("2026-01-01T10:00:00Z"));
@@ -95,45 +104,52 @@ class OutboxRecordFactoryTest {
                                Long userId,
                                Instant nextAttemptAt,
                                Map<String, String> headers,
-                               Map<String, String> metadata) implements ForgeOutboxPayload {
+                               Map<String, String> metadata,
+                               String initiatorType,
+                               String initiatorId) implements ForgeOutboxPayload {
 
         @Override
-        public String getOutboxTraceId() {
+        public String eventType() {
+            return "EMAIL_VERIFY";
+        }
+
+        @Override
+        public String traceId() {
             return this.traceId;
         }
 
         @Override
-        public OutboxAggregateType getAggregateType() {
-            return OutboxAggregateType.USER;
+        public OutboxAggregateType aggregateType() {
+            return this.userId == null ? null : OutboxAggregateType.USER;
         }
 
         @Override
-        public Long getAggregateId() {
+        public Long aggregateId() {
             return this.userId;
         }
 
         @Override
-        public String getOutboxInitiatorType() {
-            return "SYSTEM";
+        public String initiatorType() {
+            return this.initiatorType;
         }
 
         @Override
-        public String getOutboxInitiatorId() {
-            return "1";
+        public String initiatorId() {
+            return this.initiatorId;
         }
 
         @Override
-        public Instant getOutboxNextAttemptAt() {
+        public Instant nextAttemptAt() {
             return this.nextAttemptAt;
         }
 
         @Override
-        public Map<String, String> getOutboxHeaders() {
+        public Map<String, String> headers() {
             return this.headers;
         }
 
         @Override
-        public Map<String, String> getOutboxMetadata() {
+        public Map<String, String> metadata() {
             return this.metadata;
         }
     }

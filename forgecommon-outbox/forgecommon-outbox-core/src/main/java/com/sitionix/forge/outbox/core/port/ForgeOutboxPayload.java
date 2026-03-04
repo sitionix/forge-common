@@ -5,55 +5,45 @@ import com.sitionix.forge.outbox.core.model.OutboxAggregateType;
 import java.time.Instant;
 import java.util.Map;
 
+/**
+ * Payload contract that describes how domain data is mapped into an outbox record.
+ */
 public interface ForgeOutboxPayload {
 
-    default String eventType() {
-        return null;
-    }
+    /**
+     * @return logical outbox event type used for routing to publishers
+     */
+    String eventType();
 
-    default String getOutboxEventType() {
-        return this.eventType();
-    }
-
-    default Map<String, String> getOutboxHeaders() {
+    default Map<String, String> headers() {
         return Map.of();
     }
 
-    default Map<String, String> getOutboxMetadata() {
+    default Map<String, String> metadata() {
         return Map.of();
     }
 
-    default String getOutboxTraceId() {
+    default String traceId() {
         return null;
     }
 
-    default OutboxAggregateType getAggregateType() {
-        return this.getAgregateType();
-    }
-
-    default Long getAggregateId() {
-        return this.getAgregateId();
-    }
-
-    @Deprecated(forRemoval = false)
-    default OutboxAggregateType getAgregateType() {
+    default OutboxAggregateType aggregateType() {
         return null;
     }
 
-    @Deprecated(forRemoval = false)
-    default Long getAgregateId() {
+    default Long aggregateId() {
         return null;
     }
 
-    default String getOutboxInitiatorType() {
+    default String initiatorType() {
         return null;
     }
 
-    default String getOutboxInitiatorId() {
+    default String initiatorId() {
         return null;
     }
 
-    default Instant getOutboxNextAttemptAt() {
+    default Instant nextAttemptAt() {
         return null;
     }
 }

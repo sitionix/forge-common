@@ -95,7 +95,10 @@ class PostgresOutboxStorageIT {
                 Instant.parse("2026-01-01T10:01:00Z"),
                 true,
                 Duration.ofSeconds(30));
-        postgresOutboxStorage.markSent(claimed.getFirst().getId());
+        postgresOutboxStorage.markSent(
+                claimed.getFirst().getId(),
+                Instant.parse("2026-01-01T10:01:00Z"),
+                claimed.getFirst().getUpdatedAt());
 
         //then
         assertThat(claimed).hasSize(1);
@@ -143,7 +146,8 @@ class PostgresOutboxStorageIT {
                 "boom",
                 Duration.ofSeconds(10),
                 1,
-                Instant.parse("2026-01-01T11:01:00Z"));
+                Instant.parse("2026-01-01T11:01:00Z"),
+                claimed.getFirst().getUpdatedAt());
 
         //then
         final Long statusId = jdbcTemplate.queryForObject(
@@ -157,6 +161,46 @@ class PostgresOutboxStorageIT {
 
         assertThat(statusId).isEqualTo(OutboxStatus.DEAD.getId());
         assertThat(retryCount).isEqualTo(1);
+    }
+
+    @Test
+    void givenClaimedEvent_whenMarkSentWithStaleUpdatedAt_thenIgnoreStaleUpdate() {
+        //given
+        final Instant now = Instant.parse("2026-01-01T11:30:00Z");
+        final OutboxRecord outboxRecord = OutboxRecord.builder()
+                .eventType("EMAIL_VERIFY")
+                .payload("{}")
+                .headers(Map.of())
+                .metadata(Map.of())
+                .status(OutboxStatus.PENDING)
+                .attempts(0)
+                .nextAttemptAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+
+        postgresOutboxStorage.enqueue(outboxRecord);
+        final List<OutboxRecord> claimed = postgresOutboxStorage.claimPendingEvents(
+                EnumSet.of(OutboxStatus.PENDING),
+                Set.of("EMAIL_VERIFY"),
+                10,
+                Instant.parse("2026-01-01T11:31:00Z"),
+                true,
+                Duration.ofSeconds(30));
+        final String id = claimed.getFirst().getId();
+
+        //when
+        postgresOutboxStorage.markSent(
+                id,
+                Instant.parse("2026-01-01T11:31:10Z"),
+                claimed.getFirst().getUpdatedAt().minusSeconds(1));
+
+        //then
+        final Long statusId = jdbcTemplate.queryForObject(
+                "SELECT status_id FROM forge_outbox_events WHERE id = ?",
+                Long.class,
+                Long.valueOf(id));
+        assertThat(statusId).isEqualTo(OutboxStatus.IN_PROGRESS.getId());
     }
 
     @Test

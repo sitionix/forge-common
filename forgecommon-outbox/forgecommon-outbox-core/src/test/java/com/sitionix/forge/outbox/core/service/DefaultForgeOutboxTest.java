@@ -100,7 +100,8 @@ class DefaultForgeOutboxTest {
         final OutboxRecord actual = argumentCaptor.getValue();
         assertThat(actual.getAggregateType()).isNull();
         assertThat(actual.getAggregateId()).isNull();
-        assertThat(actual.getInitiatorType()).isNull();
+        assertThat(actual.getInitiatorType()).isEqualTo("SYSTEM");
+        assertThat(actual.getInitiatorId()).isEqualTo("1");
         assertThat(actual.getHeaders()).isEqualTo(Map.of());
         assertThat(actual.getMetadata()).isEqualTo(Map.of());
         assertThat(actual.getNextAttemptAt()).isEqualTo(Instant.parse("2026-01-01T10:00:00Z"));
@@ -133,26 +134,6 @@ class DefaultForgeOutboxTest {
                 .hasMessage("Outbox payload is required");
     }
 
-    @Test
-    void givenCodecMissing_whenSend_thenThrowException() {
-        //given
-        final Clock fixedClock = Clock.fixed(Instant.parse("2026-01-01T10:00:00Z"), ZoneOffset.UTC);
-        final DefaultForgeOutbox<ForgeOutboxPayload> outboxWithoutCodec =
-                new DefaultForgeOutbox<>(this.outboxStorage, fixedClock);
-        final SendPayload payload = new SendPayload("EMAIL_VERIFY",
-                "trace-1",
-                14L,
-                null,
-                null,
-                null);
-
-        //when
-        //then
-        assertThatThrownBy(() -> outboxWithoutCodec.send(payload))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("Outbox payload codec is required for object payload");
-    }
-
     private record SendPayload(String eventType,
                                String traceId,
                                Long userId,
@@ -161,47 +142,47 @@ class DefaultForgeOutboxTest {
                                Map<String, String> metadata) implements ForgeOutboxPayload {
 
         @Override
-        public String getOutboxEventType() {
+        public String eventType() {
             return this.eventType;
         }
 
         @Override
-        public String getOutboxTraceId() {
+        public String traceId() {
             return this.traceId;
         }
 
         @Override
-        public OutboxAggregateType getAgregateType() {
-            return OutboxAggregateType.USER;
+        public OutboxAggregateType aggregateType() {
+            return this.userId == null ? null : OutboxAggregateType.USER;
         }
 
         @Override
-        public Long getAgregateId() {
+        public Long aggregateId() {
             return this.userId;
         }
 
         @Override
-        public String getOutboxInitiatorType() {
+        public String initiatorType() {
             return "SYSTEM";
         }
 
         @Override
-        public String getOutboxInitiatorId() {
+        public String initiatorId() {
             return "1";
         }
 
         @Override
-        public Instant getOutboxNextAttemptAt() {
+        public Instant nextAttemptAt() {
             return this.nextAttemptAt;
         }
 
         @Override
-        public Map<String, String> getOutboxHeaders() {
+        public Map<String, String> headers() {
             return this.headers;
         }
 
         @Override
-        public Map<String, String> getOutboxMetadata() {
+        public Map<String, String> metadata() {
             return this.metadata;
         }
     }

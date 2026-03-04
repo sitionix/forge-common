@@ -69,7 +69,7 @@ jobs:
         if: steps.check_pr.outputs.exists != 'true'
         env:
           NEXT_VERSION: ${{ steps.versions.outputs.NEXT_VERSION }}
-        run: ./mvnw -B -ntp versions:set -DnewVersion=${NEXT_VERSION} -DgenerateBackupPoms=false
+        run: mvn -B -ntp versions:set -DnewVersion=${NEXT_VERSION} -DgenerateBackupPoms=false
 
       - name: Commit changes
         if: steps.check_pr.outputs.exists != 'true'
@@ -89,9 +89,7 @@ jobs:
           BRANCH_NAME: sync/release-${{ steps.versions.outputs.CURRENT_VERSION }}
         run: |
           git fetch origin "${BRANCH_NAME}" || true
-
           git push --force-with-lease origin "HEAD:${BRANCH_NAME}"
-
 
       - name: Open sync pull request
         if: steps.check_pr.outputs.exists != 'true'

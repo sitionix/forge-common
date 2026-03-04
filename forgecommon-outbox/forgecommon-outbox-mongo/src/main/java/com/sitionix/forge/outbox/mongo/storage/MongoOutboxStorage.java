@@ -3,6 +3,8 @@ package com.sitionix.forge.outbox.mongo.storage;
 import com.sitionix.forge.outbox.core.model.OutboxRecord;
 import com.sitionix.forge.outbox.core.model.OutboxStatus;
 import com.sitionix.forge.outbox.core.port.OutboxStorage;
+import com.mongodb.client.model.FindOneAndUpdateOptions;
+import com.mongodb.client.model.ReturnDocument;
 import org.bson.Document;
 import org.bson.types.ObjectId;
 import org.springframework.data.domain.Sort;
@@ -16,6 +18,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -78,9 +81,6 @@ public class MongoOutboxStorage implements OutboxStorage {
                                 new Criteria().orOperator(
                                         Criteria.where("lockUntil").exists(false),
                                         Criteria.where("lockUntil").lte(Date.from(now))))));
-                query.addCriteria(new Criteria().orOperator(
-                        Criteria.where("lockUntil").exists(false),
-                        Criteria.where("lockUntil").lte(Date.from(now))));
             } else {
                 query.addCriteria(Criteria.where("status").in(statuses));
             }
@@ -107,11 +107,16 @@ public class MongoOutboxStorage implements OutboxStorage {
     }
 
     @Override
-    public void markSent(final String outboxEventId) {
-        final Query query = Query.query(Criteria.where("_id").is(this.objectIdOrString(outboxEventId)));
+    public void markSent(final String outboxEventId,
+                         final Instant now,
+                         final Instant expectedUpdatedAt) {
+        final Query query = Query.query(new Criteria().andOperator(
+                Criteria.where("_id").is(this.objectIdOrString(outboxEventId)),
+                Criteria.where("status").is(OutboxStatus.IN_PROGRESS.name()),
+                Criteria.where("updatedAt").is(Date.from(expectedUpdatedAt))));
         final Update update = new Update()
                 .set("status", OutboxStatus.SENT.name())
-                .set("updatedAt", new Date())
+                .set("updatedAt", Date.from(now))
                 .set("lastError", null)
                 .unset("lockUntil");
 
@@ -123,25 +128,32 @@ public class MongoOutboxStorage implements OutboxStorage {
                            final String errorMessage,
                            final Duration retryDelay,
                            final int maxRetries,
-                           final Instant now) {
-        final Query query = Query.query(Criteria.where("_id").is(this.objectIdOrString(outboxEventId)));
-        final Document current = this.mongoTemplate.findOne(query, Document.class, COLLECTION_NAME);
-        if (current == null) {
-            return;
-        }
+                           final Instant now,
+                           final Instant expectedUpdatedAt) {
+        final Object id = this.objectIdOrString(outboxEventId);
+        final Document nextAttemptsExpression = new Document("$add",
+                List.of(new Document("$ifNull", List.of("$attempts", 0)), 1));
+        final Document nextStatusExpression = new Document("$cond",
+                List.of(
+                        new Document("$gte", List.of(nextAttemptsExpression, maxRetries)),
+                        OutboxStatus.DEAD.name(),
+                        OutboxStatus.FAILED.name()));
 
-        final int attempts = current.getInteger("attempts", 0) + 1;
-        final OutboxStatus nextStatus = attempts >= maxRetries ? OutboxStatus.DEAD : OutboxStatus.FAILED;
+        final Document setDocument = new Document()
+                .append("attempts", nextAttemptsExpression)
+                .append("status", nextStatusExpression)
+                .append("lastError", errorMessage)
+                .append("nextAttemptAt", Date.from(now.plus(retryDelay)))
+                .append("updatedAt", Date.from(now))
+                .append("lockUntil", null);
 
-        final Update update = new Update()
-                .set("attempts", attempts)
-                .set("status", nextStatus.name())
-                .set("lastError", errorMessage)
-                .set("nextAttemptAt", Date.from(now.plus(retryDelay)))
-                .set("updatedAt", Date.from(now))
-                .unset("lockUntil");
-
-        this.mongoTemplate.updateFirst(query, update, COLLECTION_NAME);
+        this.mongoTemplate.getCollection(COLLECTION_NAME)
+                .findOneAndUpdate(
+                        new Document("_id", id)
+                                .append("status", OutboxStatus.IN_PROGRESS.name())
+                                .append("updatedAt", Date.from(expectedUpdatedAt)),
+                        List.of(new Document("$set", setDocument)),
+                        new FindOneAndUpdateOptions().returnDocument(ReturnDocument.AFTER));
     }
 
     @Override
@@ -161,8 +173,8 @@ public class MongoOutboxStorage implements OutboxStorage {
                 .id(this.asId(source.get("_id")))
                 .eventType(source.getString("eventType"))
                 .payload(source.getString("payload"))
-                .headers(defaultMap(source.get("headers", Map.class)))
-                .metadata(defaultMap(source.get("metadata", Map.class)))
+                .headers(this.readStringMap(source, "headers"))
+                .metadata(this.readStringMap(source, "metadata"))
                 .traceId(source.getString("traceId"))
                 .aggregateType(source.getString("aggregateType"))
                 .aggregateId(source.getLong("aggregateId"))
@@ -196,5 +208,21 @@ public class MongoOutboxStorage implements OutboxStorage {
             return Map.of();
         }
         return Map.copyOf(source);
+    }
+
+    private Map<String, String> readStringMap(final Document source,
+                                              final String field) {
+        final Object raw = source.get(field);
+        if (!(raw instanceof Map<?, ?> rawMap) || rawMap.isEmpty()) {
+            return Map.of();
+        }
+        final Map<String, String> result = new LinkedHashMap<>();
+        for (final Map.Entry<?, ?> entry : rawMap.entrySet()) {
+            if (entry.getKey() == null || entry.getValue() == null) {
+                continue;
+            }
+            result.put(String.valueOf(entry.getKey()), String.valueOf(entry.getValue()));
+        }
+        return result.isEmpty() ? Map.of() : Map.copyOf(result);
     }
 }
