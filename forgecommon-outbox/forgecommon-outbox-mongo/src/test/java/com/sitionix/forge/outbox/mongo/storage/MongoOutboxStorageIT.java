@@ -77,7 +77,10 @@ class MongoOutboxStorageIT {
                 true,
                 Duration.ofSeconds(30));
         final String id = claimed.getFirst().getId();
-        mongoOutboxStorage.markSent(id);
+        mongoOutboxStorage.markSent(
+                id,
+                Instant.parse("2026-01-01T10:01:00Z"),
+                claimed.getFirst().getUpdatedAt());
 
         //then
         final String status = mongoTemplate.getCollection(MongoOutboxStorage.COLLECTION_NAME)
@@ -124,7 +127,8 @@ class MongoOutboxStorageIT {
                 "boom",
                 Duration.ofSeconds(10),
                 1,
-                Instant.parse("2026-01-01T11:01:00Z"));
+                Instant.parse("2026-01-01T11:01:00Z"),
+                claimed.getFirst().getUpdatedAt());
 
         //then
         final org.bson.Document stored = mongoTemplate.getCollection(MongoOutboxStorage.COLLECTION_NAME)
@@ -132,6 +136,49 @@ class MongoOutboxStorageIT {
                 .first();
         assertThat(stored.getString("status")).isEqualTo("DEAD");
         assertThat(stored.getInteger("attempts")).isEqualTo(1);
+    }
+
+    @Test
+    void givenClaimedEvent_whenMarkFailedWithStaleUpdatedAt_thenIgnoreStaleUpdate() {
+        //given
+        final Instant now = Instant.parse("2026-01-01T11:30:00Z");
+        final OutboxRecord outboxRecord = OutboxRecord.builder()
+                .eventType("EMAIL_VERIFY")
+                .payload("{}")
+                .headers(Map.of())
+                .metadata(Map.of())
+                .status(OutboxStatus.PENDING)
+                .attempts(0)
+                .nextAttemptAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+
+        mongoOutboxStorage.enqueue(outboxRecord);
+        final List<OutboxRecord> claimed = mongoOutboxStorage.claimPendingEvents(
+                EnumSet.of(OutboxStatus.PENDING),
+                Set.of("EMAIL_VERIFY"),
+                10,
+                Instant.parse("2026-01-01T11:31:00Z"),
+                true,
+                Duration.ofSeconds(30));
+        final String id = claimed.getFirst().getId();
+
+        //when
+        mongoOutboxStorage.markFailed(
+                id,
+                "boom",
+                Duration.ofSeconds(10),
+                5,
+                Instant.parse("2026-01-01T11:31:00Z"),
+                claimed.getFirst().getUpdatedAt().minusSeconds(1));
+
+        //then
+        final org.bson.Document stored = mongoTemplate.getCollection(MongoOutboxStorage.COLLECTION_NAME)
+                .find(new org.bson.Document("_id", new org.bson.types.ObjectId(id)))
+                .first();
+        assertThat(stored.getString("status")).isEqualTo("IN_PROGRESS");
+        assertThat(stored.getInteger("attempts")).isEqualTo(0);
     }
 
     @Test

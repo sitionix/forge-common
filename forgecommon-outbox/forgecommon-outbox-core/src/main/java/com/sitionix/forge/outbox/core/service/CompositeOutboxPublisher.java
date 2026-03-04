@@ -22,8 +22,8 @@ public class CompositeOutboxPublisher implements OutboxPublisher {
 
     public CompositeOutboxPublisher(final List<? extends ForgeOutboxEventPublisher<?>> publishers,
                                     final OutboxPayloadCodec outboxPayloadCodec) {
-        this.publishersByEventType = this.indexPublishers(publishers);
-        this.outboxPayloadCodec = outboxPayloadCodec;
+        this.publishersByEventType = this.indexPublishers(Objects.requireNonNull(publishers, "publishers are required"));
+        this.outboxPayloadCodec = Objects.requireNonNull(outboxPayloadCodec, "outboxPayloadCodec is required");
     }
 
     @Override
@@ -33,6 +33,7 @@ public class CompositeOutboxPublisher implements OutboxPublisher {
 
     @Override
     public void publish(final OutboxRecord record) throws Exception {
+        Objects.requireNonNull(record, "record is required");
         final ForgeOutboxEventPublisher<?> publisher = this.publishersByEventType.get(record.getEventType());
         if (publisher == null) {
             throw new IllegalStateException("No ForgeOutboxEventPublisher registered for event type: " + record.getEventType());
@@ -81,9 +82,13 @@ public class CompositeOutboxPublisher implements OutboxPublisher {
     private Map<String, ForgeOutboxEventPublisher<?>> indexPublishers(final List<? extends ForgeOutboxEventPublisher<?>> publishers) {
         final Map<String, ForgeOutboxEventPublisher<?>> result = new LinkedHashMap<>();
         for (final ForgeOutboxEventPublisher<?> publisher : publishers) {
+            Objects.requireNonNull(publisher, "publisher is required");
             final String eventType = publisher.eventType();
             if (eventType == null || eventType.isBlank()) {
                 throw new IllegalStateException("ForgeOutboxEventPublisher event type is required");
+            }
+            if (publisher.payloadType() == null) {
+                throw new IllegalStateException("ForgeOutboxEventPublisher payload type is required");
             }
             final ForgeOutboxEventPublisher<?> existing = result.putIfAbsent(eventType, publisher);
             if (existing != null) {

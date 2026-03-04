@@ -2,40 +2,41 @@ package com.sitionix.forge.outbox.core.service;
 
 import com.sitionix.forge.outbox.core.model.OutboxRecord;
 import com.sitionix.forge.outbox.core.model.OutboxStatus;
+import com.sitionix.forge.outbox.core.model.OutboxAggregateType;
 import com.sitionix.forge.outbox.core.port.ForgeOutboxPayload;
 
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Objects;
 
 public class OutboxRecordFactory {
 
     private final Clock clock;
 
     public OutboxRecordFactory(final Clock clock) {
-        this.clock = clock;
+        this.clock = Objects.requireNonNull(clock, "clock is required");
     }
 
     public OutboxRecord create(final ForgeOutboxPayload payload,
                                final String eventType) {
         final Instant now = Instant.now(this.clock);
-        final Long aggregateId = payload.getAggregateId();
+        final OutboxAggregateType aggregateType = payload.aggregateType();
+        final Long aggregateId = payload.aggregateId();
 
         return OutboxRecord.builder()
                 .eventType(eventType)
                 .payload(null)
-                .headers(defaultMap(payload.getOutboxHeaders()))
-                .metadata(defaultMap(payload.getOutboxMetadata()))
-                .traceId(payload.getOutboxTraceId())
-                .aggregateType(aggregateId == null || payload.getAggregateType() == null
-                        ? null
-                        : payload.getAggregateType().getDescription())
+                .headers(defaultMap(payload.headers()))
+                .metadata(defaultMap(payload.metadata()))
+                .traceId(payload.traceId())
+                .aggregateType(aggregateType == null ? null : aggregateType.getDescription())
                 .aggregateId(aggregateId)
-                .initiatorType(aggregateId == null ? null : payload.getOutboxInitiatorType())
-                .initiatorId(aggregateId == null ? null : payload.getOutboxInitiatorId())
+                .initiatorType(payload.initiatorType())
+                .initiatorId(payload.initiatorId())
                 .status(OutboxStatus.PENDING)
                 .attempts(0)
-                .nextAttemptAt(payload.getOutboxNextAttemptAt() == null ? now : payload.getOutboxNextAttemptAt())
+                .nextAttemptAt(payload.nextAttemptAt() == null ? now : payload.nextAttemptAt())
                 .lastError(null)
                 .createdAt(now)
                 .updatedAt(now)

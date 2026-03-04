@@ -39,7 +39,9 @@ class CompositeOutboxPublisherTest {
     @BeforeEach
     void setUp() {
         when(this.publisher.eventType()).thenReturn("EMAIL_VERIFY");
+        when(this.publisher.payloadType()).thenReturn(TestPayload.class);
         this.compositeOutboxPublisher = new CompositeOutboxPublisher(List.of(this.publisher), this.outboxPayloadCodec);
+        clearInvocations(this.publisher, this.outboxPayloadCodec);
     }
 
     @AfterEach
@@ -56,7 +58,6 @@ class CompositeOutboxPublisherTest {
 
         //then
         assertThat(actual).isEqualTo(Set.of("EMAIL_VERIFY"));
-        verify(this.publisher).eventType();
     }
 
     @Test
@@ -74,7 +75,6 @@ class CompositeOutboxPublisherTest {
                 .build();
         final ArgumentCaptor<Event<TestPayload>> eventCaptor = ArgumentCaptor.forClass((Class) Event.class);
 
-        when(this.publisher.payloadType()).thenReturn(TestPayload.class);
         when(this.outboxPayloadCodec.deserialize(outboxRecord.getPayload(), TestPayload.class))
                 .thenReturn(payload);
 
@@ -82,7 +82,6 @@ class CompositeOutboxPublisherTest {
         this.compositeOutboxPublisher.publish(outboxRecord);
 
         //then
-        verify(this.publisher).eventType();
         verify(this.outboxPayloadCodec).deserialize(outboxRecord.getPayload(), TestPayload.class);
         verify(this.publisher).payloadType();
         verify(this.publisher).publish(eventCaptor.capture());
@@ -121,10 +120,25 @@ class CompositeOutboxPublisherTest {
         verify(this.publisher).eventType();
     }
 
+    @Test
+    void givenPublisherWithMissingPayloadType_whenCreate_thenThrowException() {
+        //given
+        clearInvocations(this.publisher);
+        when(this.publisher.payloadType()).thenReturn(null);
+
+        //when
+        //then
+        assertThatThrownBy(() -> new CompositeOutboxPublisher(List.of(this.publisher), this.outboxPayloadCodec))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("ForgeOutboxEventPublisher payload type is required");
+        verify(this.publisher).eventType();
+        verify(this.publisher).payloadType();
+    }
+
     private record TestPayload(String value) implements ForgeOutboxPayload {
 
         @Override
-        public String getOutboxEventType() {
+        public String eventType() {
             return "EMAIL_VERIFY";
         }
     }

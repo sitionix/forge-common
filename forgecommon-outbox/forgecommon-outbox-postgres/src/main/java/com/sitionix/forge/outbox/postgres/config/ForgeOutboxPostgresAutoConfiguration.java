@@ -6,12 +6,13 @@ import com.sitionix.forge.outbox.postgres.storage.PostgresOutboxStorage;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigurationPackages;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.domain.EntityScanPackages;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
 import javax.sql.DataSource;
@@ -45,19 +46,28 @@ public class ForgeOutboxPostgresAutoConfiguration {
         return new NamedParameterJdbcTemplate(dataSource);
     }
 
-    @Bean
+    @Configuration(proxyBeanMethods = false)
     @ConditionalOnBean(DataSource.class)
-    @ConditionalOnExpression("'${forge.outbox.domain-store:NONE}'.equalsIgnoreCase('POSTGRES')")
+    @ConditionalOnProperty(prefix = "forge.outbox", name = "domain-store", havingValue = "POSTGRES")
     @ConditionalOnMissingBean(OutboxStorage.class)
-    public OutboxStorage postgresOutboxStorage(final NamedParameterJdbcTemplate namedParameterJdbcTemplate) {
-        return new PostgresOutboxStorage(namedParameterJdbcTemplate);
+    static class ExplicitPostgresOutboxStorageConfiguration {
+
+        @Bean
+        public OutboxStorage postgresOutboxStorage(final NamedParameterJdbcTemplate namedParameterJdbcTemplate) {
+            return new PostgresOutboxStorage(namedParameterJdbcTemplate);
+        }
     }
 
-    @Bean
+    @Configuration(proxyBeanMethods = false)
     @ConditionalOnBean(DataSource.class)
-    @ConditionalOnExpression("'${forge.outbox.domain-store:NONE}'.equalsIgnoreCase('NONE')")
-    @ConditionalOnMissingBean(OutboxStorage.class)
-    public OutboxStorage postgresOutboxStorageByAutoDetection(final NamedParameterJdbcTemplate namedParameterJdbcTemplate) {
-        return new PostgresOutboxStorage(namedParameterJdbcTemplate);
+    @ConditionalOnProperty(prefix = "forge.outbox", name = "domain-store", havingValue = "NONE", matchIfMissing = true)
+    @ConditionalOnMissingBean(value = OutboxStorage.class, type = "org.springframework.data.mongodb.core.MongoTemplate")
+    static class AutoDetectedPostgresOutboxStorageConfiguration {
+
+        @Bean
+        public OutboxStorage postgresOutboxStorageByAutoDetection(
+                final NamedParameterJdbcTemplate namedParameterJdbcTemplate) {
+            return new PostgresOutboxStorage(namedParameterJdbcTemplate);
+        }
     }
 }

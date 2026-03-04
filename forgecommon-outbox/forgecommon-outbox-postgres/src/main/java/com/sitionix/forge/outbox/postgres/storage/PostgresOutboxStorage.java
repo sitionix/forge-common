@@ -191,7 +191,9 @@ public class PostgresOutboxStorage implements OutboxStorage {
 
     @Override
     @Transactional
-    public void markSent(final String outboxEventId) {
+    public void markSent(final String outboxEventId,
+                         final Instant now,
+                         final Instant expectedUpdatedAt) {
         final String sql = """
                 UPDATE %s
                 SET status_id = :statusId,
@@ -199,12 +201,16 @@ public class PostgresOutboxStorage implements OutboxStorage {
                     lock_until = NULL,
                     updated_at = :updatedAt
                 WHERE id = :id
+                  AND status_id = :inProgressStatusId
+                  AND updated_at = :expectedUpdatedAt
                 """.formatted(TABLE_NAME);
 
         this.jdbcTemplate.update(sql, new MapSqlParameterSource()
                 .addValue("statusId", OutboxStatus.SENT.getId())
-                .addValue("updatedAt", Timestamp.from(Instant.now()))
-                .addValue("id", Long.valueOf(outboxEventId)));
+                .addValue("updatedAt", Timestamp.from(now))
+                .addValue("id", Long.valueOf(outboxEventId))
+                .addValue("inProgressStatusId", OutboxStatus.IN_PROGRESS.getId())
+                .addValue("expectedUpdatedAt", Timestamp.from(expectedUpdatedAt)));
     }
 
     @Override
@@ -213,7 +219,8 @@ public class PostgresOutboxStorage implements OutboxStorage {
                            final String errorMessage,
                            final Duration retryDelay,
                            final int maxRetries,
-                           final Instant now) {
+                           final Instant now,
+                           final Instant expectedUpdatedAt) {
         final String sql = """
                 UPDATE %s
                 SET retry_count = retry_count + 1,
@@ -226,6 +233,8 @@ public class PostgresOutboxStorage implements OutboxStorage {
                     END,
                     updated_at = :updatedAt
                 WHERE id = :id
+                  AND status_id = :inProgressStatusId
+                  AND updated_at = :expectedUpdatedAt
                 """.formatted(TABLE_NAME);
 
         this.jdbcTemplate.update(sql, new MapSqlParameterSource()
@@ -235,7 +244,9 @@ public class PostgresOutboxStorage implements OutboxStorage {
                 .addValue("deadStatusId", OutboxStatus.DEAD.getId())
                 .addValue("failedStatusId", OutboxStatus.FAILED.getId())
                 .addValue("updatedAt", Timestamp.from(now))
-                .addValue("id", Long.valueOf(outboxEventId)));
+                .addValue("id", Long.valueOf(outboxEventId))
+                .addValue("inProgressStatusId", OutboxStatus.IN_PROGRESS.getId())
+                .addValue("expectedUpdatedAt", Timestamp.from(expectedUpdatedAt)));
     }
 
     @Override
