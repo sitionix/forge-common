@@ -51,6 +51,7 @@ class DefaultForgeOutboxTest {
         //given
         final SendPayload payload = new SendPayload("EMAIL_VERIFY",
                 "trace-1",
+                "SITE",
                 10L,
                 Instant.parse("2026-01-01T10:01:00Z"),
                 Map.of("header-1", "value-1"),
@@ -71,7 +72,7 @@ class DefaultForgeOutboxTest {
         assertThat(actual.getHeaders()).isEqualTo(Map.of("header-1", "value-1"));
         assertThat(actual.getMetadata()).isEqualTo(Map.of("meta-1", "value-1"));
         assertThat(actual.getTraceId()).isEqualTo("trace-1");
-        assertThat(actual.getAggregateType()).isEqualTo("USER");
+        assertThat(actual.getAggregateType()).isEqualTo("SITE");
         assertThat(actual.getAggregateId()).isEqualTo(10L);
         assertThat(actual.getInitiatorType()).isEqualTo("SYSTEM");
         assertThat(actual.getInitiatorId()).isEqualTo("1");
@@ -83,6 +84,7 @@ class DefaultForgeOutboxTest {
         //given
         final SendPayload payload = new SendPayload("EMAIL_VERIFY",
                 null,
+                "   ",
                 null,
                 null,
                 null,
@@ -115,6 +117,7 @@ class DefaultForgeOutboxTest {
                 null,
                 null,
                 null,
+                null,
                 null);
 
         //when
@@ -134,8 +137,28 @@ class DefaultForgeOutboxTest {
                 .hasMessage("Outbox payload is required");
     }
 
+    @Test
+    void givenLegacyEnumAggregateTypePayload_whenSend_thenPersistAggregateType() {
+        //given
+        final LegacySendPayload payload = new LegacySendPayload(77L);
+        final ArgumentCaptor<OutboxRecord> argumentCaptor = ArgumentCaptor.forClass(OutboxRecord.class);
+        when(this.outboxPayloadCodec.serialize(payload))
+                .thenReturn("{\"value\":1}");
+
+        //when
+        this.forgeOutbox.send(payload);
+
+        //then
+        verify(this.outboxPayloadCodec).serialize(payload);
+        verify(this.outboxStorage).enqueue(argumentCaptor.capture());
+        final OutboxRecord actual = argumentCaptor.getValue();
+        assertThat(actual.getAggregateType()).isEqualTo("USER");
+        assertThat(actual.getAggregateId()).isEqualTo(77L);
+    }
+
     private record SendPayload(String eventType,
                                String traceId,
+                               String aggregateTypeName,
                                Long userId,
                                Instant nextAttemptAt,
                                Map<String, String> headers,
@@ -152,8 +175,8 @@ class DefaultForgeOutboxTest {
         }
 
         @Override
-        public OutboxAggregateType aggregateType() {
-            return this.userId == null ? null : OutboxAggregateType.USER;
+        public String aggregateTypeValue() {
+            return this.aggregateTypeName;
         }
 
         @Override
@@ -184,6 +207,24 @@ class DefaultForgeOutboxTest {
         @Override
         public Map<String, String> metadata() {
             return this.metadata;
+        }
+    }
+
+    private record LegacySendPayload(Long userId) implements ForgeOutboxPayload {
+
+        @Override
+        public String eventType() {
+            return "EMAIL_VERIFY";
+        }
+
+        @Override
+        public OutboxAggregateType aggregateType() {
+            return OutboxAggregateType.USER;
+        }
+
+        @Override
+        public Long aggregateId() {
+            return this.userId;
         }
     }
 }

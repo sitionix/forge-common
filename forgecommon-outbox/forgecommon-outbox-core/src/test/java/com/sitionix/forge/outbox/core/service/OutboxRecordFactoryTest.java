@@ -29,6 +29,7 @@ class OutboxRecordFactoryTest {
         //given
         final TestPayload payload = new TestPayload(
                 "trace-1",
+                "SITE",
                 10L,
                 Instant.parse("2026-01-01T10:01:00Z"),
                 Map.of("header-1", "value-1"),
@@ -45,7 +46,7 @@ class OutboxRecordFactoryTest {
         assertThat(actual.getHeaders()).isEqualTo(Map.of("header-1", "value-1"));
         assertThat(actual.getMetadata()).isEqualTo(Map.of("meta-1", "value-1"));
         assertThat(actual.getTraceId()).isEqualTo("trace-1");
-        assertThat(actual.getAggregateType()).isEqualTo("USER");
+        assertThat(actual.getAggregateType()).isEqualTo("SITE");
         assertThat(actual.getAggregateId()).isEqualTo(10L);
         assertThat(actual.getInitiatorType()).isEqualTo("SYSTEM");
         assertThat(actual.getInitiatorId()).isEqualTo("1");
@@ -61,6 +62,7 @@ class OutboxRecordFactoryTest {
         //given
         final TestPayload payload = new TestPayload(
                 null,
+                "   ",
                 null,
                 null,
                 null,
@@ -79,6 +81,19 @@ class OutboxRecordFactoryTest {
         assertThat(actual.getHeaders()).isEqualTo(Map.of());
         assertThat(actual.getMetadata()).isEqualTo(Map.of());
         assertThat(actual.getNextAttemptAt()).isEqualTo(Instant.parse("2026-01-01T10:00:00Z"));
+    }
+
+    @Test
+    void givenLegacyEnumAggregateType_whenCreate_thenBuildRecordWithAggregateTypeValue() {
+        //given
+        final LegacyPayload payload = new LegacyPayload(100L);
+
+        //when
+        final OutboxRecord actual = this.outboxRecordFactory.create(payload, "EMAIL_VERIFY");
+
+        //then
+        assertThat(actual.getAggregateType()).isEqualTo("USER");
+        assertThat(actual.getAggregateId()).isEqualTo(100L);
     }
 
     @Test
@@ -101,6 +116,7 @@ class OutboxRecordFactoryTest {
     }
 
     private record TestPayload(String traceId,
+                               String aggregateTypeName,
                                Long userId,
                                Instant nextAttemptAt,
                                Map<String, String> headers,
@@ -119,8 +135,8 @@ class OutboxRecordFactoryTest {
         }
 
         @Override
-        public OutboxAggregateType aggregateType() {
-            return this.userId == null ? null : OutboxAggregateType.USER;
+        public String aggregateTypeValue() {
+            return this.aggregateTypeName;
         }
 
         @Override
@@ -151,6 +167,24 @@ class OutboxRecordFactoryTest {
         @Override
         public Map<String, String> metadata() {
             return this.metadata;
+        }
+    }
+
+    private record LegacyPayload(Long userId) implements ForgeOutboxPayload {
+
+        @Override
+        public String eventType() {
+            return "EMAIL_VERIFY";
+        }
+
+        @Override
+        public OutboxAggregateType aggregateType() {
+            return OutboxAggregateType.USER;
+        }
+
+        @Override
+        public Long aggregateId() {
+            return this.userId;
         }
     }
 }

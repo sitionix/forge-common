@@ -2,7 +2,6 @@ package com.sitionix.forge.outbox.core.service;
 
 import com.sitionix.forge.outbox.core.model.OutboxRecord;
 import com.sitionix.forge.outbox.core.model.OutboxStatus;
-import com.sitionix.forge.outbox.core.model.OutboxAggregateType;
 import com.sitionix.forge.outbox.core.port.ForgeOutboxPayload;
 
 import java.time.Clock;
@@ -21,7 +20,7 @@ public class OutboxRecordFactory {
     public OutboxRecord create(final ForgeOutboxPayload payload,
                                final String eventType) {
         final Instant now = Instant.now(this.clock);
-        final OutboxAggregateType aggregateType = payload.aggregateType();
+        final String aggregateType = this.normalize(payload.aggregateTypeValue());
         final Long aggregateId = payload.aggregateId();
 
         return OutboxRecord.builder()
@@ -30,7 +29,7 @@ public class OutboxRecordFactory {
                 .headers(defaultMap(payload.headers()))
                 .metadata(defaultMap(payload.metadata()))
                 .traceId(payload.traceId())
-                .aggregateType(aggregateType == null ? null : aggregateType.getDescription())
+                .aggregateType(aggregateType)
                 .aggregateId(aggregateId)
                 .initiatorType(payload.initiatorType())
                 .initiatorId(payload.initiatorId())
@@ -48,6 +47,14 @@ public class OutboxRecordFactory {
         return outboxRecord.toBuilder()
                 .payload(encodedPayload)
                 .build();
+    }
+
+    private String normalize(final String value) {
+        if (value == null) {
+            return null;
+        }
+        final String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private static Map<String, String> defaultMap(final Map<String, String> source) {

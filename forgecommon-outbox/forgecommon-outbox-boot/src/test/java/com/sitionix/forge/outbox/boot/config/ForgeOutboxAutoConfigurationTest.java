@@ -1,12 +1,12 @@
 package com.sitionix.forge.outbox.boot.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.sitionix.forge.outbox.core.model.Event;
 import com.sitionix.forge.outbox.core.port.ForgeOutbox;
 import com.sitionix.forge.outbox.core.port.ForgeOutboxEventPublisher;
 import com.sitionix.forge.outbox.core.port.ForgeOutboxPayload;
 import com.sitionix.forge.outbox.core.port.ForgeOutboxWorker;
 import com.sitionix.forge.outbox.core.port.OutboxPublisher;
+import com.sitionix.forge.outbox.core.model.Event;
 import com.sitionix.forge.outbox.core.port.OutboxStorage;
 import com.sitionix.forge.outbox.core.service.OutboxDispatcher;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,7 +49,7 @@ class ForgeOutboxAutoConfigurationTest {
     void givenOutboxStorageAndPublisher_whenContextLoads_thenCreateDispatchingChain() {
         //given
         final OutboxStorage outboxStorage = mock(OutboxStorage.class);
-        final ForgeOutboxEventPublisher<TestPayload> publisher = new TestPublisher();
+        final ForgeOutboxEventPublisher<?> publisher = new TestPublisher();
 
         //when
         //then
@@ -83,7 +83,7 @@ class ForgeOutboxAutoConfigurationTest {
     void givenOutboxDisabled_whenContextLoads_thenSkipOutboxGraph() {
         //given
         final OutboxStorage outboxStorage = mock(OutboxStorage.class);
-        final ForgeOutboxEventPublisher<TestPayload> publisher = new TestPublisher();
+        final ForgeOutboxEventPublisher<?> publisher = new TestPublisher();
 
         //when
         //then
@@ -102,12 +102,7 @@ class ForgeOutboxAutoConfigurationTest {
     private static class TestPublisher implements ForgeOutboxEventPublisher<TestPayload> {
 
         @Override
-        public String eventType() {
-            return "TEST_EVENT";
-        }
-
-        @Override
-        public Class<TestPayload> payloadType() {
+        public Class<TestPayload> payloadClass() {
             return TestPayload.class;
         }
 
