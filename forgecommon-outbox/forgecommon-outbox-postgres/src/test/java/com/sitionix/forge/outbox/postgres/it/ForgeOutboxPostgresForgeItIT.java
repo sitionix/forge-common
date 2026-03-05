@@ -6,7 +6,6 @@ import com.sitionix.forge.outbox.core.model.OutboxStatus;
 import com.sitionix.forge.outbox.core.port.ForgeOutbox;
 import com.sitionix.forge.outbox.core.port.ForgeOutboxEventPublisher;
 import com.sitionix.forge.outbox.core.port.ForgeOutboxPayload;
-import com.sitionix.forge.outbox.core.port.ForgeTypedOutboxEventPublisher;
 import com.sitionix.forge.outbox.core.port.ForgeOutboxWorker;
 import com.sitionix.forge.outbox.postgres.it.infra.ForgeOutboxAggregateTypeEntity;
 import com.sitionix.forge.outbox.postgres.entity.ForgeOutboxEventEntity;
@@ -282,58 +281,58 @@ class ForgeOutboxPostgresForgeItIT {
     static class TestConfig {
 
         @Bean
-        ForgeOutboxEventPublisher successPublisher() {
+        ForgeOutboxEventPublisher<?> successPublisher() {
             return new SuccessPublisher();
         }
 
         @Bean
-        ForgeOutboxEventPublisher failingPublisher() {
+        ForgeOutboxEventPublisher<?> failingPublisher() {
             return new FailingPublisher();
         }
 
         @Bean
-        ForgeOutboxEventPublisher aggregatePublisher() {
+        ForgeOutboxEventPublisher<?> aggregatePublisher() {
             return new AggregatePublisher();
         }
     }
 
-    static class SuccessPublisher extends ForgeTypedOutboxEventPublisher<SuccessPayload> {
+    static class SuccessPublisher implements ForgeOutboxEventPublisher<SuccessPayload> {
 
         static final List<String> PUBLISHED_EVENT_TYPES = new CopyOnWriteArrayList<>();
 
         @Override
-        protected Class<SuccessPayload> payloadClass() {
+        public Class<SuccessPayload> payloadClass() {
             return SuccessPayload.class;
         }
 
         @Override
-        protected void publish(final Event<SuccessPayload> event) {
+        public void publish(final Event<SuccessPayload> event) {
             PUBLISHED_EVENT_TYPES.add(event.getEventType());
         }
     }
 
-    static class FailingPublisher extends ForgeTypedOutboxEventPublisher<FailingPayload> {
+    static class FailingPublisher implements ForgeOutboxEventPublisher<FailingPayload> {
 
         @Override
-        protected Class<FailingPayload> payloadClass() {
+        public Class<FailingPayload> payloadClass() {
             return FailingPayload.class;
         }
 
         @Override
-        protected void publish(final Event<FailingPayload> event) {
+        public void publish(final Event<FailingPayload> event) {
             throw new IllegalStateException("Forced publish failure");
         }
     }
 
-    static class AggregatePublisher extends ForgeTypedOutboxEventPublisher<AggregatePayload> {
+    static class AggregatePublisher implements ForgeOutboxEventPublisher<AggregatePayload> {
 
         @Override
-        protected Class<AggregatePayload> payloadClass() {
+        public Class<AggregatePayload> payloadClass() {
             return AggregatePayload.class;
         }
 
         @Override
-        protected void publish(final Event<AggregatePayload> event) {
+        public void publish(final Event<AggregatePayload> event) {
             // no-op
         }
     }

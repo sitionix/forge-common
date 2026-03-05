@@ -30,10 +30,10 @@ class CompositeOutboxPublisherTest {
     private OutboxPayloadCodec outboxPayloadCodec;
 
     @Mock
-    private ForgeOutboxEventPublisher firstPublisher;
+    private ForgeOutboxEventPublisher<?> firstPublisher;
 
     @Mock
-    private ForgeOutboxEventPublisher secondPublisher;
+    private ForgeOutboxEventPublisher<?> secondPublisher;
 
     @BeforeEach
     void setUp() {

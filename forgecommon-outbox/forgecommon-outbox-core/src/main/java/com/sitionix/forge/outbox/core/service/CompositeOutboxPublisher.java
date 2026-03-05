@@ -13,10 +13,10 @@ public class CompositeOutboxPublisher implements OutboxPublisher {
 
     private static final Set<String> ALL_EVENT_TYPES = Set.of("*");
 
-    private final List<ForgeOutboxEventPublisher> publishers;
+    private final List<ForgeOutboxEventPublisher<?>> publishers;
     private final OutboxPayloadCodec outboxPayloadCodec;
 
-    public CompositeOutboxPublisher(final List<? extends ForgeOutboxEventPublisher> publishers,
+    public CompositeOutboxPublisher(final List<? extends ForgeOutboxEventPublisher<?>> publishers,
                                     final OutboxPayloadCodec outboxPayloadCodec) {
         this.publishers = List.copyOf(Objects.requireNonNull(publishers, "publishers are required"));
         this.outboxPayloadCodec = Objects.requireNonNull(outboxPayloadCodec, "outboxPayloadCodec is required");
@@ -30,7 +30,7 @@ public class CompositeOutboxPublisher implements OutboxPublisher {
     @Override
     public void publish(final OutboxRecord record) throws Exception {
         Objects.requireNonNull(record, "record is required");
-        for (final ForgeOutboxEventPublisher publisher : this.publishers) {
+        for (final ForgeOutboxEventPublisher<?> publisher : this.publishers) {
             Objects.requireNonNull(publisher, "publisher is required");
             final boolean handled = publisher.tryPublish(record, this.outboxPayloadCodec);
             if (handled) {
