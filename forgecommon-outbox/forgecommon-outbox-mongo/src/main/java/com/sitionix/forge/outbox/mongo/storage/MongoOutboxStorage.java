@@ -62,16 +62,15 @@ public class MongoOutboxStorage implements OutboxStorage {
                                                  final Instant now,
                                                  final boolean lockEnabled,
                                                  final Duration lockLease) {
-        if (eventTypes == null || eventTypes.isEmpty()) {
-            return List.of();
-        }
-
+        final boolean filterByEventTypes = eventTypes != null && !eventTypes.isEmpty() && !eventTypes.contains("*");
         final List<String> statuses = eventStatuses.stream().map(Enum::name).toList();
         final List<OutboxRecord> claimedEvents = new ArrayList<>();
 
         for (int index = 0; index < batchSize; index++) {
             final Query query = new Query();
-            query.addCriteria(Criteria.where("eventType").in(eventTypes));
+            if (filterByEventTypes) {
+                query.addCriteria(Criteria.where("eventType").in(eventTypes));
+            }
             query.addCriteria(Criteria.where("nextAttemptAt").lte(Date.from(now)));
             if (lockEnabled) {
                 query.addCriteria(new Criteria().orOperator(

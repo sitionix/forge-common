@@ -86,10 +86,7 @@ public class PostgresOutboxStorage implements OutboxStorage {
                                                  final Instant now,
                                                  final boolean lockEnabled,
                                                  final Duration lockLease) {
-        if (eventTypes == null || eventTypes.isEmpty()) {
-            return List.of();
-        }
-
+        final boolean filterByEventTypes = eventTypes != null && !eventTypes.isEmpty() && !eventTypes.contains("*");
         final List<Long> statusIds = eventStatuses.stream().map(OutboxStatus::getId).toList();
         final Timestamp nowTimestamp = Timestamp.from(now);
         final Timestamp lockUntil = lockEnabled ? Timestamp.from(now.plus(lockLease)) : null;
@@ -105,7 +102,7 @@ public class PostgresOutboxStorage implements OutboxStorage {
                         AND lock_until <= :now
                      )
                 )
-                  AND event_type IN (:eventTypes)
+                  AND (:filterByEventTypes = FALSE OR event_type IN (:eventTypes))
                   AND next_retry_at <= :now
                 ORDER BY next_retry_at ASC, created_at ASC
                 FOR UPDATE SKIP LOCKED
@@ -114,7 +111,8 @@ public class PostgresOutboxStorage implements OutboxStorage {
 
         final MapSqlParameterSource selectParams = new MapSqlParameterSource()
                 .addValue("statusIds", statusIds)
-                .addValue("eventTypes", eventTypes)
+                .addValue("eventTypes", filterByEventTypes ? eventTypes : List.of("__all__"))
+                .addValue("filterByEventTypes", filterByEventTypes)
                 .addValue("inProgressStatusId", OutboxStatus.IN_PROGRESS.getId())
                 .addValue("lockEnabled", lockEnabled)
                 .addValue("now", nowTimestamp)

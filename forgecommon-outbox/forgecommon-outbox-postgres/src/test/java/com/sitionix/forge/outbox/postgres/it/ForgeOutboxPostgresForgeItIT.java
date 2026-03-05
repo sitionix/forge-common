@@ -6,6 +6,7 @@ import com.sitionix.forge.outbox.core.model.OutboxStatus;
 import com.sitionix.forge.outbox.core.port.ForgeOutbox;
 import com.sitionix.forge.outbox.core.port.ForgeOutboxEventPublisher;
 import com.sitionix.forge.outbox.core.port.ForgeOutboxPayload;
+import com.sitionix.forge.outbox.core.port.ForgeTypedOutboxEventPublisher;
 import com.sitionix.forge.outbox.core.port.ForgeOutboxWorker;
 import com.sitionix.forge.outbox.postgres.it.infra.ForgeOutboxAggregateTypeEntity;
 import com.sitionix.forge.outbox.postgres.entity.ForgeOutboxEventEntity;
@@ -100,7 +101,7 @@ class ForgeOutboxPostgresForgeItIT {
     }
 
     @Test
-    void givenUnsupportedEventType_whenDispatchPendingEvents_thenRecordRemainsPending() {
+    void givenUnsupportedEventType_whenDispatchPendingEvents_thenRecordMarkedFailed() {
         //given
         this.forgeOutbox.send(new UnsupportedPayload("unknown-1"));
 
@@ -108,15 +109,15 @@ class ForgeOutboxPostgresForgeItIT {
         final OutboxDispatchSummary summary = this.forgeOutboxWorker.dispatchPendingEvents();
 
         //then
-        assertThat(summary.getClaimed()).isEqualTo(0);
+        assertThat(summary.getClaimed()).isEqualTo(1);
         assertThat(summary.getSent()).isEqualTo(0);
-        assertThat(summary.getFailed()).isEqualTo(0);
+        assertThat(summary.getFailed()).isEqualTo(1);
         assertThat(SuccessPublisher.PUBLISHED_EVENT_TYPES).isEmpty();
         this.testManager.postgresql().get(ForgeOutboxEventEntity.class)
                 .hasSize(1)
                 .singleElement()
                 .andExpected(entity -> Objects.equals(entity.getEventType(), "EMAIL_UNKNOWN"))
-                .andExpected(entity -> Objects.equals(entity.getStatusId(), OutboxStatus.PENDING.getId()))
+                .andExpected(entity -> Objects.equals(entity.getStatusId(), OutboxStatus.FAILED.getId()))
                 .assertEntity();
     }
 
@@ -281,73 +282,58 @@ class ForgeOutboxPostgresForgeItIT {
     static class TestConfig {
 
         @Bean
-        ForgeOutboxEventPublisher<SuccessPayload> successPublisher() {
+        ForgeOutboxEventPublisher successPublisher() {
             return new SuccessPublisher();
         }
 
         @Bean
-        ForgeOutboxEventPublisher<FailingPayload> failingPublisher() {
+        ForgeOutboxEventPublisher failingPublisher() {
             return new FailingPublisher();
         }
 
         @Bean
-        ForgeOutboxEventPublisher<AggregatePayload> aggregatePublisher() {
+        ForgeOutboxEventPublisher aggregatePublisher() {
             return new AggregatePublisher();
         }
     }
 
-    static class SuccessPublisher implements ForgeOutboxEventPublisher<SuccessPayload> {
+    static class SuccessPublisher extends ForgeTypedOutboxEventPublisher<SuccessPayload> {
 
         static final List<String> PUBLISHED_EVENT_TYPES = new CopyOnWriteArrayList<>();
 
         @Override
-        public String eventType() {
-            return "EMAIL_VERIFY";
-        }
-
-        @Override
-        public Class<SuccessPayload> payloadType() {
+        protected Class<SuccessPayload> payloadClass() {
             return SuccessPayload.class;
         }
 
         @Override
-        public void publish(final Event<SuccessPayload> event) {
+        protected void publish(final Event<SuccessPayload> event) {
             PUBLISHED_EVENT_TYPES.add(event.getEventType());
         }
     }
 
-    static class FailingPublisher implements ForgeOutboxEventPublisher<FailingPayload> {
+    static class FailingPublisher extends ForgeTypedOutboxEventPublisher<FailingPayload> {
 
         @Override
-        public String eventType() {
-            return "EMAIL_FAIL";
-        }
-
-        @Override
-        public Class<FailingPayload> payloadType() {
+        protected Class<FailingPayload> payloadClass() {
             return FailingPayload.class;
         }
 
         @Override
-        public void publish(final Event<FailingPayload> event) {
+        protected void publish(final Event<FailingPayload> event) {
             throw new IllegalStateException("Forced publish failure");
         }
     }
 
-    static class AggregatePublisher implements ForgeOutboxEventPublisher<AggregatePayload> {
+    static class AggregatePublisher extends ForgeTypedOutboxEventPublisher<AggregatePayload> {
 
         @Override
-        public String eventType() {
-            return "EMAIL_AGGREGATE";
-        }
-
-        @Override
-        public Class<AggregatePayload> payloadType() {
+        protected Class<AggregatePayload> payloadClass() {
             return AggregatePayload.class;
         }
 
         @Override
-        public void publish(final Event<AggregatePayload> event) {
+        protected void publish(final Event<AggregatePayload> event) {
             // no-op
         }
     }

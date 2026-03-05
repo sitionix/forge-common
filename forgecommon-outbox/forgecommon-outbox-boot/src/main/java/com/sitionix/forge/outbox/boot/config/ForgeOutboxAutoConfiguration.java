@@ -76,9 +76,9 @@ public class ForgeOutboxAutoConfiguration {
 
         @Bean
         @ConditionalOnMissingBean(OutboxPublisher.class)
-        public OutboxPublisher outboxPublisher(final ObjectProvider<ForgeOutboxEventPublisher<?>> publishersProvider,
+        public OutboxPublisher outboxPublisher(final ObjectProvider<ForgeOutboxEventPublisher> publishersProvider,
                                               final OutboxPayloadCodec outboxPayloadCodec) {
-            final List<ForgeOutboxEventPublisher<?>> publishers = publishersProvider.orderedStream().toList();
+            final List<ForgeOutboxEventPublisher> publishers = publishersProvider.orderedStream().toList();
             return new CompositeOutboxPublisher(publishers, outboxPayloadCodec);
         }
 

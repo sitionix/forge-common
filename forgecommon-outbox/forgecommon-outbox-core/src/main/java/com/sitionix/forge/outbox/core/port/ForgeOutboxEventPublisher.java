@@ -1,29 +1,20 @@
 package com.sitionix.forge.outbox.core.port;
 
-import com.sitionix.forge.outbox.core.model.Event;
+import com.sitionix.forge.outbox.core.model.OutboxRecord;
 
 /**
- * Adapter contract responsible for publishing a concrete outbox payload type.
- *
- * @param <P> payload type
+ * Adapter contract responsible for publishing claimed outbox records.
  */
-public interface ForgeOutboxEventPublisher<P extends ForgeOutboxPayload> {
+public interface ForgeOutboxEventPublisher {
 
     /**
-     * @return outbox event type supported by this publisher
-     */
-    String eventType();
-
-    /**
-     * @return payload class expected by this publisher
-     */
-    Class<P> payloadType();
-
-    /**
-     * Publishes the decoded outbox event.
+     * Attempts to publish one claimed outbox record.
      *
-     * @param event decoded event envelope
-     * @throws Exception transport-specific publishing failure
+     * @param record claimed outbox record
+     * @param outboxPayloadCodec payload codec to decode payload
+     * @return true when this publisher handled the record; false when unsupported
+     * @throws Exception transport-specific publishing failure when the record is supported
      */
-    void publish(Event<P> event) throws Exception;
+    boolean tryPublish(OutboxRecord record,
+                       OutboxPayloadCodec outboxPayloadCodec) throws Exception;
 }
