@@ -1,6 +1,5 @@
 package com.sitionix.forge.outbox.postgres.storage;
 
-import com.sitionix.forge.outbox.core.model.OutboxAggregateType;
 import com.sitionix.forge.outbox.core.model.OutboxRecord;
 import com.sitionix.forge.outbox.core.model.OutboxStatus;
 import com.sitionix.forge.outbox.core.port.OutboxStorage;
@@ -141,22 +140,23 @@ public class PostgresOutboxStorage implements OutboxStorage {
                 .addValue("ids", ids));
 
         final String selectClaimedSql = """
-                SELECT id,
-                       event_type,
-                       payload,
-                       trace_id,
-                       aggregate_type_id,
-                       aggregate_id,
-                       status_id,
-                       retry_count,
-                       next_retry_at,
-                       last_error,
-                       created_at,
-                       updated_at
-                FROM %s
-                WHERE id IN (:ids)
-                ORDER BY next_retry_at ASC, created_at ASC
-                """.formatted(TABLE_NAME);
+                SELECT event.id,
+                       event.event_type,
+                       event.payload,
+                       event.trace_id,
+                       aggregate_type.description AS aggregate_type,
+                       event.aggregate_id,
+                       event.status_id,
+                       event.retry_count,
+                       event.next_retry_at,
+                       event.last_error,
+                       event.created_at,
+                       event.updated_at
+                FROM %s event
+                LEFT JOIN %s aggregate_type ON aggregate_type.id = event.aggregate_type_id
+                WHERE event.id IN (:ids)
+                ORDER BY event.next_retry_at ASC, event.created_at ASC
+                """.formatted(TABLE_NAME, AGGREGATE_TYPE_TABLE);
 
         return this.jdbcTemplate.query(selectClaimedSql,
                 new MapSqlParameterSource().addValue("ids", ids),
@@ -164,7 +164,6 @@ public class PostgresOutboxStorage implements OutboxStorage {
                     final Timestamp nextRetryAt = resultSet.getTimestamp("next_retry_at");
                     final Timestamp createdAt = resultSet.getTimestamp("created_at");
                     final Timestamp updatedAt = resultSet.getTimestamp("updated_at");
-                    final Long aggregateTypeId = resultSet.getObject("aggregate_type_id", Long.class);
 
                     return OutboxRecord.builder()
                             .id(String.valueOf(resultSet.getLong("id")))
@@ -173,9 +172,7 @@ public class PostgresOutboxStorage implements OutboxStorage {
                             .headers(Map.of())
                             .metadata(Map.of())
                             .traceId(resultSet.getString("trace_id"))
-                            .aggregateType(aggregateTypeId == null
-                                    ? null
-                                    : OutboxAggregateType.fromId(aggregateTypeId).getDescription())
+                            .aggregateType(resultSet.getString("aggregate_type"))
                             .aggregateId(resultSet.getObject("aggregate_id", Long.class))
                             .initiatorType(null)
                             .initiatorId(null)
@@ -267,15 +264,25 @@ public class PostgresOutboxStorage implements OutboxStorage {
         if (aggregateType == null || aggregateType.isBlank()) {
             return null;
         }
-        final OutboxAggregateType resolved = OutboxAggregateType.fromDescription(aggregateType);
-        final String sql = """
-                INSERT INTO %s (id, description)
-                VALUES (:id, :description)
-                ON CONFLICT (id) DO UPDATE SET description = EXCLUDED.description
+        final String normalizedAggregateType = aggregateType.trim();
+        final String insertSql = """
+                INSERT INTO %s (description)
+                VALUES (:description)
+                ON CONFLICT (description) DO NOTHING
                 """.formatted(AGGREGATE_TYPE_TABLE);
-        this.jdbcTemplate.update(sql, new MapSqlParameterSource()
-                .addValue("id", resolved.getId())
-                .addValue("description", resolved.getDescription()));
-        return resolved.getId();
+        final MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("description", normalizedAggregateType);
+        this.jdbcTemplate.update(insertSql, params);
+
+        final String selectSql = """
+                SELECT id
+                FROM %s
+                WHERE description = :description
+                """.formatted(AGGREGATE_TYPE_TABLE);
+        final List<Long> ids = this.jdbcTemplate.query(selectSql, params, (resultSet, rowNum) -> resultSet.getLong("id"));
+        if (ids.isEmpty()) {
+            throw new IllegalStateException("Unable to resolve aggregateType id for description=" + normalizedAggregateType);
+        }
+        return ids.getFirst();
     }
 }

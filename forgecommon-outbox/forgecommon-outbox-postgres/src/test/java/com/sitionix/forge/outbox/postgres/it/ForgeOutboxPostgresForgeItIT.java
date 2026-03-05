@@ -7,6 +7,7 @@ import com.sitionix.forge.outbox.core.port.ForgeOutbox;
 import com.sitionix.forge.outbox.core.port.ForgeOutboxEventPublisher;
 import com.sitionix.forge.outbox.core.port.ForgeOutboxPayload;
 import com.sitionix.forge.outbox.core.port.ForgeOutboxWorker;
+import com.sitionix.forge.outbox.postgres.it.infra.ForgeOutboxAggregateTypeEntity;
 import com.sitionix.forge.outbox.postgres.entity.ForgeOutboxEventEntity;
 import com.sitionix.forge.outbox.postgres.it.infra.TestManager;
 import com.sitionix.forgeit.core.test.IntegrationTest;
@@ -22,6 +23,10 @@ import org.springframework.context.annotation.Import;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -48,9 +53,15 @@ class ForgeOutboxPostgresForgeItIT {
     @BeforeEach
     void setUp() {
         this.testManager.postgresql()
-                .clearAllData(List.of(DbContractsDsl.entity(ForgeOutboxEventEntity.class)
-                        .cleanupPolicy(CleanupPolicy.DELETE_ALL)
-                        .build()));
+                .clearAllData(List.of(
+                        DbContractsDsl.entity(ForgeOutboxEventEntity.class)
+                                .cleanupPolicy(CleanupPolicy.DELETE_ALL)
+                                .build()));
+        this.testManager.postgresql()
+                .clearAllData(List.of(
+                        DbContractsDsl.entity(ForgeOutboxAggregateTypeEntity.class)
+                                .cleanupPolicy(CleanupPolicy.DELETE_ALL)
+                                .build()));
         SuccessPublisher.PUBLISHED_EVENT_TYPES.clear();
     }
 
@@ -195,6 +206,62 @@ class ForgeOutboxPostgresForgeItIT {
     }
 
     @Test
+    void givenConcurrentWorkers_whenDispatchPendingEvents_thenPublishEventOnlyOnce() throws ExecutionException, InterruptedException {
+        //given
+        this.forgeOutbox.send(new SuccessPayload("concurrent-1"));
+        final ExecutorService executorService = Executors.newFixedThreadPool(2);
+
+        //when
+        final Future<OutboxDispatchSummary> firstFuture = executorService.submit(this.forgeOutboxWorker::dispatchPendingEvents);
+        final Future<OutboxDispatchSummary> secondFuture = executorService.submit(this.forgeOutboxWorker::dispatchPendingEvents);
+        final OutboxDispatchSummary firstSummary;
+        final OutboxDispatchSummary secondSummary;
+        try {
+            firstSummary = firstFuture.get();
+            secondSummary = secondFuture.get();
+        } finally {
+            executorService.shutdown();
+        }
+
+        //then
+        final int claimed = firstSummary.getClaimed() + secondSummary.getClaimed();
+        final int sent = firstSummary.getSent() + secondSummary.getSent();
+        final int failed = firstSummary.getFailed() + secondSummary.getFailed();
+        assertThat(claimed).isEqualTo(1);
+        assertThat(sent).isEqualTo(1);
+        assertThat(failed).isEqualTo(0);
+        assertThat(SuccessPublisher.PUBLISHED_EVENT_TYPES).hasSize(1);
+        this.testManager.postgresql().get(ForgeOutboxEventEntity.class)
+                .hasSize(1)
+                .singleElement()
+                .andExpected(entity -> Objects.equals(entity.getStatusId(), OutboxStatus.SENT.getId()))
+                .andExpected(entity -> Objects.equals(entity.getRetryCount(), 0))
+                .assertEntity();
+    }
+
+    @Test
+    void givenCustomAggregateTypePayload_whenDispatchPendingEvents_thenPersistAggregateTypeDynamically() {
+        //given
+        this.forgeOutbox.send(new AggregatePayload("site-1"));
+
+        //when
+        final OutboxDispatchSummary summary = this.forgeOutboxWorker.dispatchPendingEvents();
+
+        //then
+        assertThat(summary.getClaimed()).isEqualTo(1);
+        assertThat(summary.getSent()).isEqualTo(1);
+        assertThat(summary.getFailed()).isEqualTo(0);
+        final List<ForgeOutboxEventEntity> outboxEvents = this.testManager.postgresql().get(ForgeOutboxEventEntity.class).getAll();
+        final List<ForgeOutboxAggregateTypeEntity> aggregateTypes = this.testManager.postgresql()
+                .get(ForgeOutboxAggregateTypeEntity.class)
+                .getAll();
+        assertThat(outboxEvents).hasSize(1);
+        assertThat(outboxEvents.getFirst().getAggregateTypeId()).isNotNull();
+        assertThat(aggregateTypes).anyMatch(entity -> Objects.equals(entity.getId(), outboxEvents.getFirst().getAggregateTypeId())
+                && Objects.equals(entity.getDescription(), "SITE"));
+    }
+
+    @Test
     void givenNoSupportedPendingEvents_whenDispatchPendingEvents_thenReturnEmptySummary() {
         //given
 
@@ -221,6 +288,11 @@ class ForgeOutboxPostgresForgeItIT {
         @Bean
         ForgeOutboxEventPublisher<FailingPayload> failingPublisher() {
             return new FailingPublisher();
+        }
+
+        @Bean
+        ForgeOutboxEventPublisher<AggregatePayload> aggregatePublisher() {
+            return new AggregatePublisher();
         }
     }
 
@@ -262,6 +334,24 @@ class ForgeOutboxPostgresForgeItIT {
         }
     }
 
+    static class AggregatePublisher implements ForgeOutboxEventPublisher<AggregatePayload> {
+
+        @Override
+        public String eventType() {
+            return "EMAIL_AGGREGATE";
+        }
+
+        @Override
+        public Class<AggregatePayload> payloadType() {
+            return AggregatePayload.class;
+        }
+
+        @Override
+        public void publish(final Event<AggregatePayload> event) {
+            // no-op
+        }
+    }
+
     private record SuccessPayload(String value) implements ForgeOutboxPayload {
 
         @Override
@@ -283,6 +373,24 @@ class ForgeOutboxPostgresForgeItIT {
         @Override
         public String eventType() {
             return "EMAIL_UNKNOWN";
+        }
+    }
+
+    private record AggregatePayload(String value) implements ForgeOutboxPayload {
+
+        @Override
+        public String eventType() {
+            return "EMAIL_AGGREGATE";
+        }
+
+        @Override
+        public String aggregateTypeValue() {
+            return "SITE";
+        }
+
+        @Override
+        public Long aggregateId() {
+            return 501L;
         }
     }
 }

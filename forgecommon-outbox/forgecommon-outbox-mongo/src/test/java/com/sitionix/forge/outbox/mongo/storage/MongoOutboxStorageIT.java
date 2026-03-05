@@ -6,6 +6,7 @@ import com.sitionix.forge.outbox.core.model.OutboxRecord;
 import com.sitionix.forge.outbox.core.model.OutboxStatus;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.testcontainers.containers.MongoDBContainer;
@@ -18,6 +19,10 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -43,6 +48,11 @@ class MongoOutboxStorageIT {
     static void tearDown() {
         mongoClient.close();
         MONGO_DB_CONTAINER.stop();
+    }
+
+    @BeforeEach
+    void cleanData() {
+        mongoTemplate.getCollection(MongoOutboxStorage.COLLECTION_NAME).deleteMany(new org.bson.Document());
     }
 
     @Test
@@ -136,6 +146,96 @@ class MongoOutboxStorageIT {
                 .first();
         assertThat(stored.getString("status")).isEqualTo("DEAD");
         assertThat(stored.getInteger("attempts")).isEqualTo(1);
+    }
+
+    @Test
+    void givenLockEnabledAndLeaseExpired_whenClaimPendingEvents_thenReclaimInProgressEvent() {
+        //given
+        final Instant now = Instant.parse("2026-01-01T11:20:00Z");
+        final OutboxRecord outboxRecord = OutboxRecord.builder()
+                .eventType("EMAIL_VERIFY")
+                .payload("{}")
+                .status(OutboxStatus.PENDING)
+                .attempts(0)
+                .nextAttemptAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        mongoOutboxStorage.enqueue(outboxRecord);
+        final List<OutboxRecord> firstClaim = mongoOutboxStorage.claimPendingEvents(
+                EnumSet.of(OutboxStatus.PENDING),
+                Set.of("EMAIL_VERIFY"),
+                10,
+                Instant.parse("2026-01-01T11:21:00Z"),
+                true,
+                Duration.ofSeconds(1));
+
+        //when
+        final List<OutboxRecord> secondClaimBeforeLease = mongoOutboxStorage.claimPendingEvents(
+                EnumSet.of(OutboxStatus.PENDING),
+                Set.of("EMAIL_VERIFY"),
+                10,
+                Instant.parse("2026-01-01T11:21:00.500Z"),
+                true,
+                Duration.ofSeconds(1));
+        final List<OutboxRecord> secondClaimAfterLease = mongoOutboxStorage.claimPendingEvents(
+                EnumSet.of(OutboxStatus.PENDING),
+                Set.of("EMAIL_VERIFY"),
+                10,
+                Instant.parse("2026-01-01T11:21:02Z"),
+                true,
+                Duration.ofSeconds(1));
+
+        //then
+        assertThat(firstClaim).hasSize(1);
+        assertThat(secondClaimBeforeLease).isEmpty();
+        assertThat(secondClaimAfterLease).hasSize(1);
+        assertThat(secondClaimAfterLease.getFirst().getId()).isEqualTo(firstClaim.getFirst().getId());
+    }
+
+    @Test
+    void givenConcurrentClaimRequests_whenClaimPendingEvents_thenOnlyOneWorkerClaimsRecord() throws ExecutionException, InterruptedException {
+        //given
+        final Instant now = Instant.parse("2026-01-01T11:25:00Z");
+        final OutboxRecord outboxRecord = OutboxRecord.builder()
+                .eventType("EMAIL_VERIFY")
+                .payload("{}")
+                .status(OutboxStatus.PENDING)
+                .attempts(0)
+                .nextAttemptAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        mongoOutboxStorage.enqueue(outboxRecord);
+        final ExecutorService executorService = Executors.newFixedThreadPool(2);
+
+        //when
+        final Future<List<OutboxRecord>> firstFuture = executorService.submit(() -> mongoOutboxStorage.claimPendingEvents(
+                EnumSet.of(OutboxStatus.PENDING),
+                Set.of("EMAIL_VERIFY"),
+                1,
+                Instant.parse("2026-01-01T11:26:00Z"),
+                true,
+                Duration.ofSeconds(30)));
+        final Future<List<OutboxRecord>> secondFuture = executorService.submit(() -> mongoOutboxStorage.claimPendingEvents(
+                EnumSet.of(OutboxStatus.PENDING),
+                Set.of("EMAIL_VERIFY"),
+                1,
+                Instant.parse("2026-01-01T11:26:00Z"),
+                true,
+                Duration.ofSeconds(30)));
+        final List<OutboxRecord> firstClaim;
+        final List<OutboxRecord> secondClaim;
+        try {
+            firstClaim = firstFuture.get();
+            secondClaim = secondFuture.get();
+        } finally {
+            executorService.shutdown();
+        }
+
+        //then
+        final int claimedCount = firstClaim.size() + secondClaim.size();
+        assertThat(claimedCount).isEqualTo(1);
     }
 
     @Test

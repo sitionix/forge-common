@@ -31,6 +31,14 @@ public interface ForgeOutboxPayload {
         return null;
     }
 
+    /**
+     * @return aggregate type name for storage/routing
+     */
+    default String aggregateTypeValue() {
+        final OutboxAggregateType aggregateType = this.aggregateType();
+        return aggregateType == null ? null : aggregateType.getDescription();
+    }
+
     default Long aggregateId() {
         return null;
     }

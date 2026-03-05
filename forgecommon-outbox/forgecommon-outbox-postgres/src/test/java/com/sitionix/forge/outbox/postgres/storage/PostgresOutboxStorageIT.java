@@ -5,6 +5,7 @@ import com.sitionix.forge.outbox.core.model.OutboxStatus;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -62,6 +63,17 @@ class PostgresOutboxStorageIT {
     static void tearDown() {
         POSTGRESQL_CONTAINER.stop();
         TimeZone.setDefault(previousDefaultTimeZone);
+    }
+
+    @BeforeEach
+    void cleanData() {
+        jdbcTemplate.update("DELETE FROM forge_outbox_events");
+        jdbcTemplate.update("DELETE FROM forge_outbox_aggregate_types");
+        jdbcTemplate.update("""
+                INSERT INTO forge_outbox_aggregate_types (id, description)
+                VALUES (1, 'USER')
+                ON CONFLICT (id) DO UPDATE SET description = EXCLUDED.description
+                """);
     }
 
     @Test
@@ -164,6 +176,47 @@ class PostgresOutboxStorageIT {
     }
 
     @Test
+    void givenCustomAggregateType_whenEnqueueAndClaim_thenPersistAndResolveDescription() {
+        //given
+        final Instant now = Instant.parse("2026-01-01T11:10:00Z");
+        final OutboxRecord outboxRecord = OutboxRecord.builder()
+                .eventType("EMAIL_VERIFY")
+                .payload("{}")
+                .aggregateType("SITE")
+                .aggregateId(500L)
+                .status(OutboxStatus.PENDING)
+                .attempts(0)
+                .nextAttemptAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        postgresOutboxStorage.enqueue(outboxRecord);
+
+        //when
+        final List<OutboxRecord> claimed = postgresOutboxStorage.claimPendingEvents(
+                EnumSet.of(OutboxStatus.PENDING),
+                Set.of("EMAIL_VERIFY"),
+                10,
+                Instant.parse("2026-01-01T11:11:00Z"),
+                true,
+                Duration.ofSeconds(30));
+
+        //then
+        assertThat(claimed).hasSize(1);
+        assertThat(claimed.getFirst().getAggregateType()).isEqualTo("SITE");
+        final Long aggregateTypeId = jdbcTemplate.queryForObject(
+                "SELECT aggregate_type_id FROM forge_outbox_events WHERE id = ?",
+                Long.class,
+                Long.valueOf(claimed.getFirst().getId()));
+        final String aggregateType = jdbcTemplate.queryForObject(
+                "SELECT description FROM forge_outbox_aggregate_types WHERE id = ?",
+                String.class,
+                aggregateTypeId);
+        assertThat(aggregateTypeId).isNotNull();
+        assertThat(aggregateType).isEqualTo("SITE");
+    }
+
+    @Test
     void givenClaimedEvent_whenMarkSentWithStaleUpdatedAt_thenIgnoreStaleUpdate() {
         //given
         final Instant now = Instant.parse("2026-01-01T11:30:00Z");
@@ -201,6 +254,51 @@ class PostgresOutboxStorageIT {
                 Long.class,
                 Long.valueOf(id));
         assertThat(statusId).isEqualTo(OutboxStatus.IN_PROGRESS.getId());
+    }
+
+    @Test
+    void givenLockEnabledAndLeaseExpired_whenClaimPendingEvents_thenReclaimInProgressEvent() {
+        //given
+        final Instant now = Instant.parse("2026-01-01T11:40:00Z");
+        final OutboxRecord outboxRecord = OutboxRecord.builder()
+                .eventType("EMAIL_VERIFY")
+                .payload("{}")
+                .status(OutboxStatus.PENDING)
+                .attempts(0)
+                .nextAttemptAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        postgresOutboxStorage.enqueue(outboxRecord);
+        final List<OutboxRecord> firstClaim = postgresOutboxStorage.claimPendingEvents(
+                EnumSet.of(OutboxStatus.PENDING),
+                Set.of("EMAIL_VERIFY"),
+                10,
+                Instant.parse("2026-01-01T11:41:00Z"),
+                true,
+                Duration.ofSeconds(1));
+
+        //when
+        final List<OutboxRecord> secondClaimBeforeLease = postgresOutboxStorage.claimPendingEvents(
+                EnumSet.of(OutboxStatus.PENDING),
+                Set.of("EMAIL_VERIFY"),
+                10,
+                Instant.parse("2026-01-01T11:41:00.500Z"),
+                true,
+                Duration.ofSeconds(1));
+        final List<OutboxRecord> secondClaimAfterLease = postgresOutboxStorage.claimPendingEvents(
+                EnumSet.of(OutboxStatus.PENDING),
+                Set.of("EMAIL_VERIFY"),
+                10,
+                Instant.parse("2026-01-01T11:41:02Z"),
+                true,
+                Duration.ofSeconds(1));
+
+        //then
+        assertThat(firstClaim).hasSize(1);
+        assertThat(secondClaimBeforeLease).isEmpty();
+        assertThat(secondClaimAfterLease).hasSize(1);
+        assertThat(secondClaimAfterLease.getFirst().getId()).isEqualTo(firstClaim.getFirst().getId());
     }
 
     @Test
