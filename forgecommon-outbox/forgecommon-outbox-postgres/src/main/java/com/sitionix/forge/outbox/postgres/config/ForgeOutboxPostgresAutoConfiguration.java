@@ -9,6 +9,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.domain.EntityScanPackages;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.context.annotation.Bean;
@@ -19,7 +20,7 @@ import javax.sql.DataSource;
 import java.util.ArrayList;
 import java.util.List;
 
-@AutoConfiguration
+@AutoConfiguration(after = DataSourceAutoConfiguration.class)
 public class ForgeOutboxPostgresAutoConfiguration {
 
     @Bean

@@ -4,16 +4,23 @@ import com.sitionix.forge.outbox.core.port.OutboxStorage;
 import com.sitionix.forge.outbox.mongo.storage.MongoOutboxIndexesInitializer;
 import com.sitionix.forge.outbox.mongo.storage.MongoOutboxStorage;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
+import org.springframework.boot.autoconfigure.mongo.MongoAutoConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.mongodb.core.MongoTemplate;
 
 import javax.sql.DataSource;
 
-@AutoConfiguration
+@AutoConfiguration(after = {
+        MongoAutoConfiguration.class,
+        MongoDataAutoConfiguration.class,
+        DataSourceAutoConfiguration.class
+})
 public class ForgeOutboxMongoAutoConfiguration {
 
     @Bean
