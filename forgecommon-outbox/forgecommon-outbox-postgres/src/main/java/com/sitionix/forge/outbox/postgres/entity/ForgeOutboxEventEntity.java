@@ -17,7 +17,7 @@ public class ForgeOutboxEventEntity {
     @Column(name = "event_type")
     private String eventType;
 
-    @Column(name = "payload")
+    @Column(name = "payload", columnDefinition = "TEXT")
     private String payload;
 
     @Column(name = "trace_id")
@@ -38,7 +38,7 @@ public class ForgeOutboxEventEntity {
     @Column(name = "next_retry_at")
     private Instant nextRetryAt;
 
-    @Column(name = "last_error")
+    @Column(name = "last_error", columnDefinition = "TEXT")
     private String lastError;
 
     @Column(name = "lock_until")
