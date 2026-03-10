@@ -7,7 +7,6 @@ import com.sitionix.forge.outbox.core.port.ForgeOutbox;
 import com.sitionix.forge.outbox.core.port.ForgeOutboxEventPublisher;
 import com.sitionix.forge.outbox.core.port.ForgeOutboxPayload;
 import com.sitionix.forge.outbox.core.port.ForgeOutboxWorker;
-import com.sitionix.forge.outbox.postgres.it.infra.ForgeOutboxAggregateTypeEntity;
 import com.sitionix.forge.outbox.postgres.entity.ForgeOutboxEventEntity;
 import com.sitionix.forge.outbox.postgres.it.infra.TestManager;
 import com.sitionix.forgeit.core.test.IntegrationTest;
@@ -29,6 +28,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @IntegrationTest(properties = {
         "forge.outbox.domain-store=POSTGRES",
@@ -55,11 +55,6 @@ class ForgeOutboxPostgresForgeItIT {
         this.testManager.postgresql()
                 .clearAllData(List.of(
                         DbContractsDsl.entity(ForgeOutboxEventEntity.class)
-                                .cleanupPolicy(CleanupPolicy.DELETE_ALL)
-                                .build()));
-        this.testManager.postgresql()
-                .clearAllData(List.of(
-                        DbContractsDsl.entity(ForgeOutboxAggregateTypeEntity.class)
                                 .cleanupPolicy(CleanupPolicy.DELETE_ALL)
                                 .build()));
         SuccessPublisher.PUBLISHED_EVENT_TYPES.clear();
@@ -240,25 +235,16 @@ class ForgeOutboxPostgresForgeItIT {
     }
 
     @Test
-    void givenCustomAggregateTypePayload_whenDispatchPendingEvents_thenPersistAggregateTypeDynamically() {
+    void givenUnknownAggregateTypePayload_whenSend_thenThrowAndDoNotPersistEvent() {
         //given
-        this.forgeOutbox.send(new AggregatePayload("site-1"));
-
-        //when
-        final OutboxDispatchSummary summary = this.forgeOutboxWorker.dispatchPendingEvents();
+        final AggregatePayload payload = new AggregatePayload("site-1");
 
         //then
-        assertThat(summary.getClaimed()).isEqualTo(1);
-        assertThat(summary.getSent()).isEqualTo(1);
-        assertThat(summary.getFailed()).isEqualTo(0);
-        final List<ForgeOutboxEventEntity> outboxEvents = this.testManager.postgresql().get(ForgeOutboxEventEntity.class).getAll();
-        final List<ForgeOutboxAggregateTypeEntity> aggregateTypes = this.testManager.postgresql()
-                .get(ForgeOutboxAggregateTypeEntity.class)
-                .getAll();
-        assertThat(outboxEvents).hasSize(1);
-        assertThat(outboxEvents.getFirst().getAggregateTypeId()).isNotNull();
-        assertThat(aggregateTypes).anyMatch(entity -> Objects.equals(entity.getId(), outboxEvents.getFirst().getAggregateTypeId())
-                && Objects.equals(entity.getDescription(), "SITE"));
+        assertThatThrownBy(() -> this.forgeOutbox.send(payload))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Unknown outbox aggregateType 'SITE'");
+        this.testManager.postgresql().get(ForgeOutboxEventEntity.class)
+                .hasSize(0);
     }
 
     @Test
@@ -290,10 +276,6 @@ class ForgeOutboxPostgresForgeItIT {
             return new FailingPublisher();
         }
 
-        @Bean
-        ForgeOutboxEventPublisher<?> aggregatePublisher() {
-            return new AggregatePublisher();
-        }
     }
 
     static class SuccessPublisher implements ForgeOutboxEventPublisher<SuccessPayload> {
@@ -321,19 +303,6 @@ class ForgeOutboxPostgresForgeItIT {
         @Override
         public void publish(final Event<FailingPayload> event) {
             throw new IllegalStateException("Forced publish failure");
-        }
-    }
-
-    static class AggregatePublisher implements ForgeOutboxEventPublisher<AggregatePayload> {
-
-        @Override
-        public Class<AggregatePayload> payloadClass() {
-            return AggregatePayload.class;
-        }
-
-        @Override
-        public void publish(final Event<AggregatePayload> event) {
-            // no-op
         }
     }
 
