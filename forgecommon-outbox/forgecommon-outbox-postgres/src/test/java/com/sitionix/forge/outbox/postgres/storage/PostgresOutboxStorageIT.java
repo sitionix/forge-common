@@ -24,6 +24,7 @@ import java.util.Set;
 import java.util.TimeZone;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @Testcontainers
 class PostgresOutboxStorageIT {
@@ -176,7 +177,7 @@ class PostgresOutboxStorageIT {
     }
 
     @Test
-    void givenCustomAggregateType_whenEnqueueAndClaim_thenPersistAndResolveDescription() {
+    void givenUnknownAggregateType_whenEnqueue_thenThrowIllegalArgumentException() {
         //given
         final Instant now = Instant.parse("2026-01-01T11:10:00Z");
         final OutboxRecord outboxRecord = OutboxRecord.builder()
@@ -190,30 +191,11 @@ class PostgresOutboxStorageIT {
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
-        postgresOutboxStorage.enqueue(outboxRecord);
-
-        //when
-        final List<OutboxRecord> claimed = postgresOutboxStorage.claimPendingEvents(
-                EnumSet.of(OutboxStatus.PENDING),
-                Set.of("EMAIL_VERIFY"),
-                10,
-                Instant.parse("2026-01-01T11:11:00Z"),
-                true,
-                Duration.ofSeconds(30));
 
         //then
-        assertThat(claimed).hasSize(1);
-        assertThat(claimed.getFirst().getAggregateType()).isEqualTo("SITE");
-        final Long aggregateTypeId = jdbcTemplate.queryForObject(
-                "SELECT aggregate_type_id FROM forge_outbox_events WHERE id = ?",
-                Long.class,
-                Long.valueOf(claimed.getFirst().getId()));
-        final String aggregateType = jdbcTemplate.queryForObject(
-                "SELECT description FROM forge_outbox_aggregate_types WHERE id = ?",
-                String.class,
-                aggregateTypeId);
-        assertThat(aggregateTypeId).isNotNull();
-        assertThat(aggregateType).isEqualTo("SITE");
+        assertThatThrownBy(() -> postgresOutboxStorage.enqueue(outboxRecord))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Unknown outbox aggregateType 'SITE'");
     }
 
     @Test
