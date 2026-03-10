@@ -263,15 +263,8 @@ public class PostgresOutboxStorage implements OutboxStorage {
             return null;
         }
         final String normalizedAggregateType = aggregateType.trim();
-        final String insertSql = """
-                INSERT INTO %s (description)
-                VALUES (:description)
-                ON CONFLICT (description) DO NOTHING
-                """.formatted(AGGREGATE_TYPE_TABLE);
         final MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("description", normalizedAggregateType);
-        this.jdbcTemplate.update(insertSql, params);
-
         final String selectSql = """
                 SELECT id
                 FROM %s
@@ -279,7 +272,9 @@ public class PostgresOutboxStorage implements OutboxStorage {
                 """.formatted(AGGREGATE_TYPE_TABLE);
         final List<Long> ids = this.jdbcTemplate.query(selectSql, params, (resultSet, rowNum) -> resultSet.getLong("id"));
         if (ids.isEmpty()) {
-            throw new IllegalStateException("Unable to resolve aggregateType id for description=" + normalizedAggregateType);
+            throw new IllegalArgumentException(
+                    "Unknown outbox aggregateType '%s'. Seed forge_outbox_aggregate_types via migration."
+                            .formatted(normalizedAggregateType));
         }
         return ids.getFirst();
     }
