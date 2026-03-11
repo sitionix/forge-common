@@ -92,7 +92,7 @@ class DefaultForgeInboxTest {
                 null,
                 null,
                 null);
-        final InboxReceiveMetadata receiveMetadata = new InboxReceiveMetadata("EMAIL_VERIFY", null, null);
+        final InboxReceiveMetadata receiveMetadata = new InboxReceiveMetadata("EMAIL_VERIFY", "idemp-2", null);
         final ArgumentCaptor<InboxRecord> argumentCaptor = ArgumentCaptor.forClass(InboxRecord.class);
         when(this.inboxPayloadCodec.serialize(payload))
                 .thenReturn("{\"value\":1}");
@@ -133,9 +133,28 @@ class DefaultForgeInboxTest {
     }
 
     @Test
+    void givenMissingIdempotencyKeyMetadata_whenReceive_thenThrowException() {
+        //given
+        final SendPayload payload = new SendPayload(
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+        final InboxReceiveMetadata receiveMetadata = new InboxReceiveMetadata("EMAIL_VERIFY", " ", null);
+
+        //when
+        //then
+        assertThatThrownBy(() -> this.forgeInbox.receive(payload, receiveMetadata))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Inbox idempotencyKey is required");
+    }
+
+    @Test
     void givenNullPayload_whenReceive_thenThrowException() {
         //given
-        final InboxReceiveMetadata receiveMetadata = new InboxReceiveMetadata("EMAIL_VERIFY", null, null);
+        final InboxReceiveMetadata receiveMetadata = new InboxReceiveMetadata("EMAIL_VERIFY", "idemp-3", null);
 
         //when
         //then
@@ -166,7 +185,7 @@ class DefaultForgeInboxTest {
     void givenLegacyEnumAggregateTypePayload_whenReceive_thenPersistAggregateType() {
         //given
         final LegacySendPayload payload = new LegacySendPayload(77L);
-        final InboxReceiveMetadata receiveMetadata = new InboxReceiveMetadata("EMAIL_VERIFY", null, null);
+        final InboxReceiveMetadata receiveMetadata = new InboxReceiveMetadata("EMAIL_VERIFY", "idemp-4", null);
         final ArgumentCaptor<InboxRecord> argumentCaptor = ArgumentCaptor.forClass(InboxRecord.class);
         when(this.inboxPayloadCodec.serialize(payload))
                 .thenReturn("{\"value\":1}");

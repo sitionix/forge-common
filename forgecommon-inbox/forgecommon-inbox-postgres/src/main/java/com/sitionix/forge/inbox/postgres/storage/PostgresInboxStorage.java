@@ -1,5 +1,8 @@
 package com.sitionix.forge.inbox.postgres.storage;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sitionix.forge.inbox.core.model.InboxRecord;
 import com.sitionix.forge.inbox.core.model.InboxStatus;
 import com.sitionix.forge.inbox.core.port.InboxStorage;
@@ -10,34 +13,50 @@ import org.springframework.transaction.annotation.Transactional;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 public class PostgresInboxStorage implements InboxStorage {
 
     private static final String TABLE_NAME = "forge_inbox_events";
     private static final String AGGREGATE_TYPE_TABLE = "forge_inbox_aggregate_types";
+    private static final TypeReference<Map<String, Object>> MAP_TYPE_REFERENCE = new TypeReference<>() { };
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
 
     public PostgresInboxStorage(final NamedParameterJdbcTemplate jdbcTemplate) {
-        this.jdbcTemplate = jdbcTemplate;
+        this(jdbcTemplate, new ObjectMapper().findAndRegisterModules());
+    }
+
+    public PostgresInboxStorage(final NamedParameterJdbcTemplate jdbcTemplate,
+                                final ObjectMapper objectMapper) {
+        this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate is required");
+        this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper is required");
     }
 
     @Override
     @Transactional
     public void enqueue(final InboxRecord record) {
-        final Long aggregateTypeId = this.resolveAggregateTypeId(record.getAggregateType());
+        final InboxRecord inboxRecord = Objects.requireNonNull(record, "record is required");
+        final String idempotencyKey = this.requireNonBlank(inboxRecord.getIdempotencyKey(), "idempotencyKey");
+        final Long aggregateTypeId = this.resolveAggregateTypeId(inboxRecord.getAggregateType());
 
         final String sql = """
                 INSERT INTO %s (
                     event_type,
                     payload,
+                    headers,
+                    metadata,
                     trace_id,
                     idempotency_key,
                     aggregate_type_id,
                     aggregate_id,
+                    initiator_type,
+                    initiator_id,
                     status_id,
                     retry_count,
                     next_retry_at,
@@ -48,10 +67,14 @@ public class PostgresInboxStorage implements InboxStorage {
                 ) VALUES (
                     :eventType,
                     :payload,
+                    CAST(:headers AS JSONB),
+                    CAST(:metadata AS JSONB),
                     :traceId,
                     :idempotencyKey,
                     :aggregateTypeId,
                     :aggregateId,
+                    :initiatorType,
+                    :initiatorId,
                     :statusId,
                     :retryCount,
                     :nextRetryAt,
@@ -65,19 +88,23 @@ public class PostgresInboxStorage implements InboxStorage {
 
         final InboxStatus pendingStatus = InboxStatus.PENDING;
         final MapSqlParameterSource parameters = new MapSqlParameterSource()
-                .addValue("eventType", record.getEventType())
-                .addValue("payload", record.getPayload())
-                .addValue("traceId", record.getTraceId())
-                .addValue("idempotencyKey", record.getIdempotencyKey())
+                .addValue("eventType", inboxRecord.getEventType())
+                .addValue("payload", inboxRecord.getPayload())
+                .addValue("headers", this.writeStringMap(inboxRecord.getHeaders()))
+                .addValue("metadata", this.writeStringMap(inboxRecord.getMetadata()))
+                .addValue("traceId", inboxRecord.getTraceId())
+                .addValue("idempotencyKey", idempotencyKey)
                 .addValue("aggregateTypeId", aggregateTypeId)
-                .addValue("aggregateId", record.getAggregateId())
+                .addValue("aggregateId", inboxRecord.getAggregateId())
+                .addValue("initiatorType", inboxRecord.getInitiatorType())
+                .addValue("initiatorId", inboxRecord.getInitiatorId())
                 .addValue("statusId", pendingStatus.getId())
-                .addValue("retryCount", record.getAttempts())
-                .addValue("nextRetryAt", Timestamp.from(record.getNextAttemptAt()))
-                .addValue("lastError", record.getLastError())
+                .addValue("retryCount", inboxRecord.getAttempts())
+                .addValue("nextRetryAt", Timestamp.from(inboxRecord.getNextAttemptAt()))
+                .addValue("lastError", inboxRecord.getLastError())
                 .addValue("lockUntil", null)
-                .addValue("createdAt", Timestamp.from(record.getCreatedAt()))
-                .addValue("updatedAt", Timestamp.from(record.getUpdatedAt()));
+                .addValue("createdAt", Timestamp.from(inboxRecord.getCreatedAt()))
+                .addValue("updatedAt", Timestamp.from(inboxRecord.getUpdatedAt()));
 
         this.jdbcTemplate.update(sql, parameters);
     }
@@ -145,10 +172,14 @@ public class PostgresInboxStorage implements InboxStorage {
                 SELECT event.id,
                        event.event_type,
                        event.payload,
+                       event.headers,
+                       event.metadata,
                        event.trace_id,
                        event.idempotency_key,
                        aggregate_type.description AS aggregate_type,
                        event.aggregate_id,
+                       event.initiator_type,
+                       event.initiator_id,
                        event.status_id,
                        event.retry_count,
                        event.next_retry_at,
@@ -172,14 +203,14 @@ public class PostgresInboxStorage implements InboxStorage {
                             .id(String.valueOf(resultSet.getLong("id")))
                             .eventType(resultSet.getString("event_type"))
                             .payload(resultSet.getString("payload"))
-                            .headers(Map.of())
-                            .metadata(Map.of())
+                            .headers(this.readStringMap(resultSet.getString("headers")))
+                            .metadata(this.readStringMap(resultSet.getString("metadata")))
                             .traceId(resultSet.getString("trace_id"))
                             .idempotencyKey(resultSet.getString("idempotency_key"))
                             .aggregateType(resultSet.getString("aggregate_type"))
                             .aggregateId(resultSet.getObject("aggregate_id", Long.class))
-                            .initiatorType(null)
-                            .initiatorId(null)
+                            .initiatorType(resultSet.getString("initiator_type"))
+                            .initiatorId(resultSet.getString("initiator_id"))
                             .status(InboxStatus.fromId(resultSet.getLong("status_id")))
                             .attempts(resultSet.getInt("retry_count"))
                             .nextAttemptAt(nextRetryAt == null ? null : nextRetryAt.toInstant())
@@ -283,5 +314,51 @@ public class PostgresInboxStorage implements InboxStorage {
                             .formatted(normalizedAggregateType));
         }
         return ids.getFirst();
+    }
+
+    private String writeStringMap(final Map<String, String> source) {
+        final Map<String, String> effectiveSource = this.defaultMap(source);
+        try {
+            return this.objectMapper.writeValueAsString(effectiveSource);
+        } catch (final JsonProcessingException exception) {
+            throw new IllegalArgumentException("Could not serialize inbox map field", exception);
+        }
+    }
+
+    private Map<String, String> readStringMap(final String source) {
+        if (source == null || source.isBlank()) {
+            return Map.of();
+        }
+        try {
+            final Map<String, Object> raw = this.objectMapper.readValue(source, MAP_TYPE_REFERENCE);
+            if (raw == null || raw.isEmpty()) {
+                return Map.of();
+            }
+            final Map<String, String> result = new LinkedHashMap<>();
+            for (final Map.Entry<String, Object> entry : raw.entrySet()) {
+                if (entry.getKey() == null || entry.getValue() == null) {
+                    continue;
+                }
+                result.put(entry.getKey(), String.valueOf(entry.getValue()));
+            }
+            return result.isEmpty() ? Map.of() : Map.copyOf(result);
+        } catch (final JsonProcessingException exception) {
+            throw new IllegalStateException("Could not deserialize inbox map field", exception);
+        }
+    }
+
+    private Map<String, String> defaultMap(final Map<String, String> source) {
+        if (source == null || source.isEmpty()) {
+            return Map.of();
+        }
+        return Map.copyOf(source);
+    }
+
+    private String requireNonBlank(final String value,
+                                   final String fieldName) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("Inbox " + fieldName + " is required");
+        }
+        return value.trim();
     }
 }

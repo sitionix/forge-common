@@ -62,7 +62,8 @@ public class InboxStartupValidator implements InitializingBean {
                             + this.properties.getDomainStore());
         }
 
-        if (inboxStorage != null && this.eventTypesProvider.getIfAvailable() == null) {
+        final boolean workerEnabled = this.properties.getWorker().isEnabled();
+        if (workerEnabled && inboxStorage != null && this.eventTypesProvider.getIfAvailable() == null) {
             throw new IllegalStateException(
                     "Forge Inbox is enabled but no ForgeInboxEventTypes bean is configured. "
                             + "Define a service-level event-type registry bean (for example EnumForgeInboxEventTypes).");

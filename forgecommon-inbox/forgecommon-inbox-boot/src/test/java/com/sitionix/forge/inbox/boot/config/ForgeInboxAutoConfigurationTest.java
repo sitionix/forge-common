@@ -2,6 +2,7 @@ package com.sitionix.forge.inbox.boot.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sitionix.forge.inbox.boot.service.SpringEnumInboxHandler;
+import com.sitionix.forge.inbox.boot.worker.ScheduledInboxCleanup;
 import com.sitionix.forge.inbox.core.model.EnumForgeInboxEventTypes;
 import com.sitionix.forge.inbox.core.model.ForgeInboxEventType;
 import com.sitionix.forge.inbox.core.model.ForgeInboxEventTypes;
@@ -104,6 +105,27 @@ class ForgeInboxAutoConfigurationTest {
                     assertThat(context).doesNotHaveBean(ForgeInbox.class);
                     assertThat(context).doesNotHaveBean(InboxHandler.class);
                     assertThat(context).doesNotHaveBean(InboxDispatcher.class);
+                });
+    }
+
+    @Test
+    void givenInboxStorageWithoutEventTypesAndWorkerDisabled_whenContextLoads_thenCreateReceiveOnlyGraph() {
+        //given
+        final InboxStorage inboxStorage = mock(InboxStorage.class);
+
+        //when
+        //then
+        this.contextRunner
+                .withPropertyValues("forge.inbox.worker.enabled=false")
+                .withBean(InboxStorage.class, () -> inboxStorage)
+                .withBean(ObjectMapper.class, ObjectMapper::new)
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(ForgeInbox.class);
+                    assertThat(context).doesNotHaveBean(InboxHandler.class);
+                    assertThat(context).doesNotHaveBean(InboxDispatcher.class);
+                    assertThat(context).doesNotHaveBean(ForgeInboxWorker.class);
+                    assertThat(context).doesNotHaveBean(ScheduledInboxCleanup.class);
                 });
     }
 

@@ -23,6 +23,7 @@ import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 public class MongoInboxStorage implements InboxStorage {
@@ -37,23 +38,26 @@ public class MongoInboxStorage implements InboxStorage {
 
     @Override
     public void enqueue(final InboxRecord record) {
+        final InboxRecord inboxRecord = Objects.requireNonNull(record, "record is required");
+        final String idempotencyKey = this.requireNonBlank(inboxRecord.getIdempotencyKey(), "idempotencyKey");
+
         final Document document = new Document();
-        document.put("eventType", record.getEventType());
-        document.put("payload", record.getPayload());
-        document.put("headers", defaultMap(record.getHeaders()));
-        document.put("metadata", defaultMap(record.getMetadata()));
-        document.put("traceId", record.getTraceId());
-        document.put("idempotencyKey", record.getIdempotencyKey());
-        document.put("aggregateType", record.getAggregateType());
-        document.put("aggregateId", record.getAggregateId());
-        document.put("initiatorType", record.getInitiatorType());
-        document.put("initiatorId", record.getInitiatorId());
+        document.put("eventType", inboxRecord.getEventType());
+        document.put("payload", inboxRecord.getPayload());
+        document.put("headers", defaultMap(inboxRecord.getHeaders()));
+        document.put("metadata", defaultMap(inboxRecord.getMetadata()));
+        document.put("traceId", inboxRecord.getTraceId());
+        document.put("idempotencyKey", idempotencyKey);
+        document.put("aggregateType", inboxRecord.getAggregateType());
+        document.put("aggregateId", inboxRecord.getAggregateId());
+        document.put("initiatorType", inboxRecord.getInitiatorType());
+        document.put("initiatorId", inboxRecord.getInitiatorId());
         document.put("status", InboxStatus.PENDING.name());
-        document.put("attempts", record.getAttempts());
-        document.put("nextAttemptAt", Date.from(record.getNextAttemptAt()));
-        document.put("lastError", record.getLastError());
-        document.put("createdAt", Date.from(record.getCreatedAt()));
-        document.put("updatedAt", Date.from(record.getUpdatedAt()));
+        document.put("attempts", inboxRecord.getAttempts());
+        document.put("nextAttemptAt", Date.from(inboxRecord.getNextAttemptAt()));
+        document.put("lastError", inboxRecord.getLastError());
+        document.put("createdAt", Date.from(inboxRecord.getCreatedAt()));
+        document.put("updatedAt", Date.from(inboxRecord.getUpdatedAt()));
 
         try {
             this.mongoTemplate.getCollection(COLLECTION_NAME).insertOne(document);
@@ -233,5 +237,13 @@ public class MongoInboxStorage implements InboxStorage {
             result.put(String.valueOf(entry.getKey()), String.valueOf(entry.getValue()));
         }
         return result.isEmpty() ? Map.of() : Map.copyOf(result);
+    }
+
+    private String requireNonBlank(final String value,
+                                   final String fieldName) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("Inbox " + fieldName + " is required");
+        }
+        return value.trim();
     }
 }

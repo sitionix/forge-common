@@ -20,6 +20,12 @@ public class ForgeInboxEventEntity {
     @Column(name = "payload", columnDefinition = "TEXT")
     private String payload;
 
+    @Column(name = "headers", columnDefinition = "jsonb")
+    private String headers;
+
+    @Column(name = "metadata", columnDefinition = "jsonb")
+    private String metadata;
+
     @Column(name = "trace_id")
     private String traceId;
 
@@ -31,6 +37,12 @@ public class ForgeInboxEventEntity {
 
     @Column(name = "aggregate_id")
     private Long aggregateId;
+
+    @Column(name = "initiator_type")
+    private String initiatorType;
+
+    @Column(name = "initiator_id")
+    private String initiatorId;
 
     @Column(name = "status_id")
     private Long statusId;
@@ -85,6 +97,22 @@ public class ForgeInboxEventEntity {
         this.traceId = traceId;
     }
 
+    public String getHeaders() {
+        return this.headers;
+    }
+
+    public void setHeaders(final String headers) {
+        this.headers = headers;
+    }
+
+    public String getMetadata() {
+        return this.metadata;
+    }
+
+    public void setMetadata(final String metadata) {
+        this.metadata = metadata;
+    }
+
     public String getIdempotencyKey() {
         return this.idempotencyKey;
     }
@@ -107,6 +135,22 @@ public class ForgeInboxEventEntity {
 
     public void setAggregateId(final Long aggregateId) {
         this.aggregateId = aggregateId;
+    }
+
+    public String getInitiatorType() {
+        return this.initiatorType;
+    }
+
+    public void setInitiatorType(final String initiatorType) {
+        this.initiatorType = initiatorType;
+    }
+
+    public String getInitiatorId() {
+        return this.initiatorId;
+    }
+
+    public void setInitiatorId(final String initiatorId) {
+        this.initiatorId = initiatorId;
     }
 
     public Long getStatusId() {

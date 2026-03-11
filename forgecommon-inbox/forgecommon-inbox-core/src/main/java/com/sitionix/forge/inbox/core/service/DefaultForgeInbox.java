@@ -48,6 +48,10 @@ public class DefaultForgeInbox<P extends ForgeInboxPayload> implements ForgeInbo
         if (eventType == null || eventType.isBlank()) {
             throw new IllegalArgumentException("Inbox eventType is required");
         }
+        final String idempotencyKey = metadata.idempotencyKey();
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new IllegalArgumentException("Inbox idempotencyKey is required");
+        }
         return metadata;
     }
 

@@ -24,6 +24,8 @@ public class ForgeInboxProperties {
 
     private final Cleanup cleanup = new Cleanup();
 
+    private final Startup startup = new Startup();
+
     @Data
     public static class Worker {
 
@@ -68,5 +70,13 @@ public class ForgeInboxProperties {
         @NotNull
         @DurationMin(millis = 1)
         private Duration retention = Duration.ofDays(14);
+    }
+
+    @Data
+    public static class Startup {
+
+        @NotNull
+        @DurationMin(millis = 1)
+        private Duration schemaReadyTimeout = Duration.ofMinutes(5);
     }
 }

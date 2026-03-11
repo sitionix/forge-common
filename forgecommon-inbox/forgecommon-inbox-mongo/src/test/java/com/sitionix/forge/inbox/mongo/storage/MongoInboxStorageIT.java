@@ -25,6 +25,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @Testcontainers
 class MongoInboxStorageIT {
@@ -65,6 +66,7 @@ class MongoInboxStorageIT {
                 .headers(Map.of("h", "1"))
                 .metadata(Map.of("m", "1"))
                 .traceId("trace-1")
+                .idempotencyKey("idemp-100")
                 .aggregateType("USER")
                 .aggregateId(100L)
                 .initiatorType("SYSTEM")
@@ -111,6 +113,7 @@ class MongoInboxStorageIT {
                 .payload("{}")
                 .headers(Map.of())
                 .metadata(Map.of())
+                .idempotencyKey("idemp-101")
                 .aggregateType("USER")
                 .aggregateId(101L)
                 .initiatorType("SYSTEM")
@@ -155,6 +158,7 @@ class MongoInboxStorageIT {
         final InboxRecord inboxRecord = InboxRecord.builder()
                 .eventType("EMAIL_VERIFY")
                 .payload("{}")
+                .idempotencyKey("idemp-102")
                 .status(InboxStatus.PENDING)
                 .attempts(0)
                 .nextAttemptAt(now)
@@ -200,6 +204,7 @@ class MongoInboxStorageIT {
         final InboxRecord inboxRecord = InboxRecord.builder()
                 .eventType("EMAIL_VERIFY")
                 .payload("{}")
+                .idempotencyKey("idemp-103")
                 .status(InboxStatus.PENDING)
                 .attempts(0)
                 .nextAttemptAt(now)
@@ -247,6 +252,7 @@ class MongoInboxStorageIT {
                 .payload("{}")
                 .headers(Map.of())
                 .metadata(Map.of())
+                .idempotencyKey("idemp-104")
                 .status(InboxStatus.PENDING)
                 .attempts(0)
                 .nextAttemptAt(now)
@@ -288,6 +294,7 @@ class MongoInboxStorageIT {
         mongoTemplate.getCollection(MongoInboxStorage.COLLECTION_NAME).insertOne(new org.bson.Document()
                 .append("eventType", "EMAIL_VERIFY")
                 .append("payload", "{}")
+                .append("idempotencyKey", "cleanup-1")
                 .append("headers", Map.of())
                 .append("metadata", Map.of())
                 .append("status", InboxStatus.PROCESSED.name())
@@ -298,6 +305,7 @@ class MongoInboxStorageIT {
         mongoTemplate.getCollection(MongoInboxStorage.COLLECTION_NAME).insertOne(new org.bson.Document()
                 .append("eventType", "EMAIL_VERIFY")
                 .append("payload", "{}")
+                .append("idempotencyKey", "cleanup-2")
                 .append("headers", Map.of())
                 .append("metadata", Map.of())
                 .append("status", InboxStatus.PROCESSED.name())
@@ -314,5 +322,61 @@ class MongoInboxStorageIT {
                 .countDocuments(new org.bson.Document("status", InboxStatus.PROCESSED.name()));
         assertThat(deleted).isEqualTo(1);
         assertThat(remaining).isEqualTo(1);
+    }
+
+    @Test
+    void givenDuplicateIdempotencyKey_whenEnqueue_thenIgnoreSecondInsert() {
+        //given
+        final Instant now = Instant.parse("2026-01-01T12:10:00Z");
+        final InboxRecord first = InboxRecord.builder()
+                .eventType("EMAIL_VERIFY")
+                .payload("{}")
+                .idempotencyKey("idemp-duplicate-1")
+                .status(InboxStatus.PENDING)
+                .attempts(0)
+                .nextAttemptAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        final InboxRecord duplicate = InboxRecord.builder()
+                .eventType("EMAIL_VERIFY")
+                .payload("{\"v\":2}")
+                .idempotencyKey("idemp-duplicate-1")
+                .status(InboxStatus.PENDING)
+                .attempts(0)
+                .nextAttemptAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+
+        //when
+        mongoInboxStorage.enqueue(first);
+        mongoInboxStorage.enqueue(duplicate);
+
+        //then
+        final long count = mongoTemplate.getCollection(MongoInboxStorage.COLLECTION_NAME)
+                .countDocuments(new org.bson.Document("idempotencyKey", "idemp-duplicate-1"));
+        assertThat(count).isEqualTo(1);
+    }
+
+    @Test
+    void givenMissingIdempotencyKey_whenEnqueue_thenThrowException() {
+        //given
+        final Instant now = Instant.parse("2026-01-01T12:20:00Z");
+        final InboxRecord inboxRecord = InboxRecord.builder()
+                .eventType("EMAIL_VERIFY")
+                .payload("{}")
+                .status(InboxStatus.PENDING)
+                .attempts(0)
+                .nextAttemptAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+
+        //when
+        //then
+        assertThatThrownBy(() -> mongoInboxStorage.enqueue(inboxRecord))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Inbox idempotencyKey is required");
     }
 }

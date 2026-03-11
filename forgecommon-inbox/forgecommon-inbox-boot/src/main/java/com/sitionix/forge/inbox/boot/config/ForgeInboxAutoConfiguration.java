@@ -118,13 +118,18 @@ public class ForgeInboxAutoConfiguration {
         @ConditionalOnMissingBean
         @ConditionalOnProperty(prefix = "forge.inbox.worker", name = "enabled", havingValue = "true", matchIfMissing = true)
         public ScheduledInboxWorker scheduledInboxWorker(final ForgeInboxProperties properties,
-                                                         final ForgeInboxWorker forgeInboxWorker) {
-            return new ScheduledInboxWorker(properties, forgeInboxWorker);
+                                                         final ForgeInboxWorker forgeInboxWorker,
+                                                         final Clock forgeInboxClock) {
+            return new ScheduledInboxWorker(properties, forgeInboxWorker, forgeInboxClock);
         }
 
         @Bean
         @ConditionalOnMissingBean
-        @ConditionalOnProperty(prefix = "forge.inbox.cleanup", name = "enabled", havingValue = "true", matchIfMissing = true)
+        @ConditionalOnProperty(
+                prefix = "forge.inbox",
+                name = {"worker.enabled", "cleanup.enabled"},
+                havingValue = "true",
+                matchIfMissing = true)
         public ScheduledInboxCleanup scheduledInboxCleanup(final ForgeInboxProperties properties,
                                                            final InboxStorage inboxStorage,
                                                            final Clock forgeInboxClock) {

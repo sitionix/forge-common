@@ -107,6 +107,30 @@ class InboxStartupValidatorTest {
     }
 
     @Test
+    void givenStoragePresentAndWorkerDisabledAndEventTypesMissing_whenValidatorRuns_thenPass() {
+        //given
+        final ForgeInboxProperties properties = new ForgeInboxProperties();
+        properties.setEnabled(true);
+        properties.setDomainStore(InboxDomainStore.POSTGRES);
+        properties.getWorker().setEnabled(false);
+
+        final StaticListableBeanFactory beanFactory = new StaticListableBeanFactory();
+        beanFactory.addBean("inboxStorage", mock(InboxStorage.class));
+
+        final InboxStartupValidator validator = new InboxStartupValidator(
+                properties,
+                beanFactory.getBeanProvider(InboxStorage.class),
+                beanFactory.getBeanProvider(DataSource.class),
+                beanFactory.getBeanProvider(ForgeInboxEventTypes.class),
+                beanFactory);
+
+        //when
+        //then
+        assertThatCode(validator::afterPropertiesSet)
+                .doesNotThrowAnyException();
+    }
+
+    @Test
     void givenDomainStoreNoneAndDataSourcePresentAndStorageMissing_whenValidatorRuns_thenFailFast() {
         //given
         final ForgeInboxProperties properties = new ForgeInboxProperties();

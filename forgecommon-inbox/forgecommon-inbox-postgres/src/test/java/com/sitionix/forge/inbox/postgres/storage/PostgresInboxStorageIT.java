@@ -87,6 +87,7 @@ class PostgresInboxStorageIT {
                 .headers(Map.of("h", "1"))
                 .metadata(Map.of("m", "1"))
                 .traceId("trace-1")
+                .idempotencyKey("idemp-100")
                 .aggregateType("USER")
                 .aggregateId(100L)
                 .initiatorType("SYSTEM")
@@ -116,12 +117,109 @@ class PostgresInboxStorageIT {
         //then
         assertThat(claimed).hasSize(1);
         assertThat(claimed.getFirst().getEventType()).isEqualTo("EMAIL_VERIFY");
+        assertThat(claimed.getFirst().getHeaders()).isEqualTo(Map.of("h", "1"));
+        assertThat(claimed.getFirst().getMetadata()).isEqualTo(Map.of("m", "1"));
+        assertThat(claimed.getFirst().getInitiatorType()).isEqualTo("SYSTEM");
+        assertThat(claimed.getFirst().getInitiatorId()).isEqualTo("100");
 
         final Long statusId = jdbcTemplate.queryForObject(
                 "SELECT status_id FROM forge_inbox_events WHERE id = ?",
                 Long.class,
                 Long.valueOf(claimed.getFirst().getId()));
         assertThat(statusId).isEqualTo(InboxStatus.PROCESSED.getId());
+    }
+
+    @Test
+    void givenDuplicateIdempotencyKey_whenEnqueue_thenIgnoreSecondInsert() {
+        //given
+        final Instant now = Instant.parse("2026-01-01T10:10:00Z");
+        final InboxRecord first = InboxRecord.builder()
+                .eventType("EMAIL_VERIFY")
+                .payload("{\"value\":1}")
+                .idempotencyKey("idemp-duplicate-1")
+                .status(InboxStatus.PENDING)
+                .attempts(0)
+                .nextAttemptAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        final InboxRecord duplicate = InboxRecord.builder()
+                .eventType("EMAIL_VERIFY")
+                .payload("{\"value\":2}")
+                .idempotencyKey("idemp-duplicate-1")
+                .status(InboxStatus.PENDING)
+                .attempts(0)
+                .nextAttemptAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+
+        //when
+        postgresInboxStorage.enqueue(first);
+        postgresInboxStorage.enqueue(duplicate);
+
+        //then
+        final Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM forge_inbox_events WHERE idempotency_key = 'idemp-duplicate-1'",
+                Integer.class);
+        assertThat(count).isEqualTo(1);
+    }
+
+    @Test
+    void givenIdempotencyKeyWithTrailingSpaces_whenEnqueueDuplicates_thenTrimAndIgnoreSecondInsert() {
+        //given
+        final Instant now = Instant.parse("2026-01-01T10:15:00Z");
+        final InboxRecord first = InboxRecord.builder()
+                .eventType("EMAIL_VERIFY")
+                .payload("{\"value\":1}")
+                .idempotencyKey("idemp-normalized-1 ")
+                .status(InboxStatus.PENDING)
+                .attempts(0)
+                .nextAttemptAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        final InboxRecord duplicate = InboxRecord.builder()
+                .eventType("EMAIL_VERIFY")
+                .payload("{\"value\":2}")
+                .idempotencyKey("idemp-normalized-1")
+                .status(InboxStatus.PENDING)
+                .attempts(0)
+                .nextAttemptAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+
+        //when
+        postgresInboxStorage.enqueue(first);
+        postgresInboxStorage.enqueue(duplicate);
+
+        //then
+        final Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM forge_inbox_events WHERE idempotency_key = 'idemp-normalized-1'",
+                Integer.class);
+        assertThat(count).isEqualTo(1);
+    }
+
+    @Test
+    void givenBlankIdempotencyKey_whenEnqueue_thenThrowIllegalArgumentException() {
+        //given
+        final Instant now = Instant.parse("2026-01-01T10:16:00Z");
+        final InboxRecord record = InboxRecord.builder()
+                .eventType("EMAIL_VERIFY")
+                .payload("{\"value\":1}")
+                .idempotencyKey("   ")
+                .status(InboxStatus.PENDING)
+                .attempts(0)
+                .nextAttemptAt(now)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+
+        //then
+        assertThatThrownBy(() -> postgresInboxStorage.enqueue(record))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Inbox idempotencyKey is required");
     }
 
     @Test
@@ -133,6 +231,7 @@ class PostgresInboxStorageIT {
                 .payload("{}")
                 .headers(Map.of())
                 .metadata(Map.of())
+                .idempotencyKey("idemp-101")
                 .aggregateType("USER")
                 .aggregateId(101L)
                 .initiatorType("SYSTEM")
@@ -183,6 +282,7 @@ class PostgresInboxStorageIT {
         final InboxRecord inboxRecord = InboxRecord.builder()
                 .eventType("EMAIL_VERIFY")
                 .payload("{}")
+                .idempotencyKey("idemp-500")
                 .aggregateType("SITE")
                 .aggregateId(500L)
                 .status(InboxStatus.PENDING)
@@ -207,6 +307,7 @@ class PostgresInboxStorageIT {
                 .payload("{}")
                 .headers(Map.of())
                 .metadata(Map.of())
+                .idempotencyKey("idemp-102")
                 .status(InboxStatus.PENDING)
                 .attempts(0)
                 .nextAttemptAt(now)
@@ -245,6 +346,7 @@ class PostgresInboxStorageIT {
         final InboxRecord inboxRecord = InboxRecord.builder()
                 .eventType("EMAIL_VERIFY")
                 .payload("{}")
+                .idempotencyKey("idemp-103")
                 .status(InboxStatus.PENDING)
                 .attempts(0)
                 .nextAttemptAt(now)
@@ -289,9 +391,9 @@ class PostgresInboxStorageIT {
         final Instant now = Instant.parse("2026-01-01T12:00:00Z");
         jdbcTemplate.update("""
                         INSERT INTO forge_inbox_events (
-                            event_type, payload, status_id, retry_count, next_retry_at, created_at, updated_at
+                            event_type, payload, idempotency_key, status_id, retry_count, next_retry_at, created_at, updated_at
                         ) VALUES (
-                            'EMAIL_VERIFY', '{}', 3, 0, ?, ?, ?
+                            'EMAIL_VERIFY', '{}', 'cleanup-1', 3, 0, ?, ?, ?
                         )
                         """,
                 Timestamp.from(now),
@@ -299,9 +401,9 @@ class PostgresInboxStorageIT {
                 Timestamp.from(now.minus(Duration.ofDays(20))));
         jdbcTemplate.update("""
                         INSERT INTO forge_inbox_events (
-                            event_type, payload, status_id, retry_count, next_retry_at, created_at, updated_at
+                            event_type, payload, idempotency_key, status_id, retry_count, next_retry_at, created_at, updated_at
                         ) VALUES (
-                            'EMAIL_VERIFY', '{}', 3, 0, ?, ?, ?
+                            'EMAIL_VERIFY', '{}', 'cleanup-2', 3, 0, ?, ?, ?
                         )
                         """,
                 Timestamp.from(now),

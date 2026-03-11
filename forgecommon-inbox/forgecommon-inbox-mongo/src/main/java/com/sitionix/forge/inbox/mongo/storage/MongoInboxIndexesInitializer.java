@@ -24,6 +24,6 @@ public class MongoInboxIndexesInitializer implements InitializingBean {
         this.mongoTemplate.indexOps(MongoInboxStorage.COLLECTION_NAME)
                 .ensureIndex(new Index().on("lockUntil", Sort.Direction.ASC));
         this.mongoTemplate.indexOps(MongoInboxStorage.COLLECTION_NAME)
-                .ensureIndex(new Index().on("idempotencyKey", Sort.Direction.ASC).unique().sparse());
+                .ensureIndex(new Index().on("idempotencyKey", Sort.Direction.ASC).unique());
     }
 }
