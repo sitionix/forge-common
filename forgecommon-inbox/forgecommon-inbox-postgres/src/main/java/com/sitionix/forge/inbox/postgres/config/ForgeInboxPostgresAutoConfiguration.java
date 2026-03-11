@@ -11,11 +11,13 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.domain.EntityScanPackages;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
+import jakarta.persistence.EntityManager;
 import javax.sql.DataSource;
 import java.util.ArrayList;
 import java.util.List;
@@ -54,8 +56,9 @@ public class ForgeInboxPostgresAutoConfiguration {
     static class ExplicitPostgresInboxStorageConfiguration {
 
         @Bean
-        public InboxStorage postgresInboxStorage(final NamedParameterJdbcTemplate namedParameterJdbcTemplate) {
-            return new PostgresInboxStorage(namedParameterJdbcTemplate);
+        public InboxStorage postgresInboxStorage(final NamedParameterJdbcTemplate namedParameterJdbcTemplate,
+                                                 final ObjectProvider<EntityManager> entityManagerProvider) {
+            return new PostgresInboxStorage(namedParameterJdbcTemplate, entityManagerProvider.getIfAvailable());
         }
     }
 
@@ -67,8 +70,9 @@ public class ForgeInboxPostgresAutoConfiguration {
 
         @Bean
         public InboxStorage postgresInboxStorageByAutoDetection(
-                final NamedParameterJdbcTemplate namedParameterJdbcTemplate) {
-            return new PostgresInboxStorage(namedParameterJdbcTemplate);
+                final NamedParameterJdbcTemplate namedParameterJdbcTemplate,
+                final ObjectProvider<EntityManager> entityManagerProvider) {
+            return new PostgresInboxStorage(namedParameterJdbcTemplate, entityManagerProvider.getIfAvailable());
         }
     }
 }

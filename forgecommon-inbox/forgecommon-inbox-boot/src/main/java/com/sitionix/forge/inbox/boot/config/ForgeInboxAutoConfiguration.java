@@ -8,7 +8,6 @@ import com.sitionix.forge.inbox.boot.worker.ScheduledInboxWorker;
 import com.sitionix.forge.inbox.core.model.ForgeInboxEventTypes;
 import com.sitionix.forge.inbox.core.model.InboxWorkerPolicy;
 import com.sitionix.forge.inbox.core.port.ForgeInbox;
-import com.sitionix.forge.inbox.core.port.ForgeInboxPayload;
 import com.sitionix.forge.inbox.core.port.ForgeInboxWorker;
 import com.sitionix.forge.inbox.core.port.InboxPayloadCodec;
 import com.sitionix.forge.inbox.core.port.InboxHandler;
@@ -68,9 +67,9 @@ public class ForgeInboxAutoConfiguration {
 
         @Bean
         @ConditionalOnMissingBean
-        public ForgeInbox<ForgeInboxPayload> forgeInbox(final InboxStorage inboxStorage,
-                                                           final Clock forgeInboxClock,
-                                                           final InboxPayloadCodec inboxPayloadCodec) {
+        public ForgeInbox<Object> forgeInbox(final InboxStorage inboxStorage,
+                                             final Clock forgeInboxClock,
+                                             final InboxPayloadCodec inboxPayloadCodec) {
             return new DefaultForgeInbox<>(inboxStorage, forgeInboxClock, inboxPayloadCodec);
         }
 

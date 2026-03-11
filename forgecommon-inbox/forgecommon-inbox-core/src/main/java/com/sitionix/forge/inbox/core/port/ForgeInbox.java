@@ -5,7 +5,7 @@ package com.sitionix.forge.inbox.core.port;
  *
  * @param <P> payload type
  */
-public interface ForgeInbox<P extends ForgeInboxPayload> {
+public interface ForgeInbox<P> {
 
     /**
      * Stores payload as an inbox record.

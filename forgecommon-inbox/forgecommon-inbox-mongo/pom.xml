@@ -41,15 +41,9 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <version>${testcontainers.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>mongodb</artifactId>
-            <version>${testcontainers.version}</version>
+            <groupId>com.sitionix.forgeit</groupId>
+            <artifactId>forgeit</artifactId>
+            <version>${forgeit.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

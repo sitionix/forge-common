@@ -18,13 +18,14 @@ import org.springframework.data.mongodb.core.query.Update;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 public class MongoInboxStorage implements InboxStorage {
 
@@ -77,45 +78,10 @@ public class MongoInboxStorage implements InboxStorage {
                                                  final Duration lockLease) {
         final boolean filterByEventTypes = eventTypes != null && !eventTypes.isEmpty() && !eventTypes.contains("*");
         final List<String> statuses = eventStatuses.stream().map(Enum::name).toList();
-        final List<InboxRecord> claimedEvents = new ArrayList<>();
-
-        for (int index = 0; index < batchSize; index++) {
-            final Query query = new Query();
-            if (filterByEventTypes) {
-                query.addCriteria(Criteria.where("eventType").in(eventTypes));
-            }
-            query.addCriteria(Criteria.where("nextAttemptAt").lte(Date.from(now)));
-            if (lockEnabled) {
-                query.addCriteria(new Criteria().orOperator(
-                        Criteria.where("status").in(statuses),
-                        new Criteria().andOperator(
-                                Criteria.where("status").is(InboxStatus.IN_PROGRESS.name()),
-                                new Criteria().orOperator(
-                                        Criteria.where("lockUntil").exists(false),
-                                        Criteria.where("lockUntil").lte(Date.from(now))))));
-            } else {
-                query.addCriteria(Criteria.where("status").in(statuses));
-            }
-            query.with(Sort.by(Sort.Order.asc("nextAttemptAt"), Sort.Order.asc("_id")));
-
-            final Update update = new Update()
-                    .set("status", InboxStatus.IN_PROGRESS.name())
-                    .set("updatedAt", Date.from(now));
-            if (lockEnabled) {
-                update.set("lockUntil", Date.from(now.plus(lockLease)));
-            } else {
-                update.unset("lockUntil");
-            }
-
-            final FindAndModifyOptions options = FindAndModifyOptions.options().returnNew(true);
-            final Document claimed = this.mongoTemplate.findAndModify(query, update, options, Document.class, COLLECTION_NAME);
-            if (claimed == null) {
-                break;
-            }
-            claimedEvents.add(this.toInboxRecord(claimed));
-        }
-
-        return claimedEvents;
+        return IntStream.range(0, batchSize)
+                .mapToObj(index -> this.claimSinglePendingEvent(filterByEventTypes, eventTypes, statuses, now, lockEnabled, lockLease))
+                .takeWhile(Objects::nonNull)
+                .toList();
     }
 
     @Override
@@ -229,14 +195,55 @@ public class MongoInboxStorage implements InboxStorage {
         if (!(raw instanceof Map<?, ?> rawMap) || rawMap.isEmpty()) {
             return Map.of();
         }
-        final Map<String, String> result = new LinkedHashMap<>();
-        for (final Map.Entry<?, ?> entry : rawMap.entrySet()) {
-            if (entry.getKey() == null || entry.getValue() == null) {
-                continue;
-            }
-            result.put(String.valueOf(entry.getKey()), String.valueOf(entry.getValue()));
-        }
+        final Map<String, String> result = rawMap.entrySet().stream()
+                .filter(entry -> entry.getKey() != null && entry.getValue() != null)
+                .collect(Collectors.toMap(
+                        entry -> String.valueOf(entry.getKey()),
+                        entry -> String.valueOf(entry.getValue()),
+                        (left, right) -> left,
+                        LinkedHashMap::new));
         return result.isEmpty() ? Map.of() : Map.copyOf(result);
+    }
+
+    private InboxRecord claimSinglePendingEvent(final boolean filterByEventTypes,
+                                                final Set<String> eventTypes,
+                                                final List<String> statuses,
+                                                final Instant now,
+                                                final boolean lockEnabled,
+                                                final Duration lockLease) {
+        final Query query = new Query();
+        if (filterByEventTypes) {
+            query.addCriteria(Criteria.where("eventType").in(eventTypes));
+        }
+        query.addCriteria(Criteria.where("nextAttemptAt").lte(Date.from(now)));
+        if (lockEnabled) {
+            query.addCriteria(new Criteria().orOperator(
+                    Criteria.where("status").in(statuses),
+                    new Criteria().andOperator(
+                            Criteria.where("status").is(InboxStatus.IN_PROGRESS.name()),
+                            new Criteria().orOperator(
+                                    Criteria.where("lockUntil").exists(false),
+                                    Criteria.where("lockUntil").lte(Date.from(now))))));
+        } else {
+            query.addCriteria(Criteria.where("status").in(statuses));
+        }
+        query.with(Sort.by(Sort.Order.asc("nextAttemptAt"), Sort.Order.asc("_id")));
+
+        final Update update = new Update()
+                .set("status", InboxStatus.IN_PROGRESS.name())
+                .set("updatedAt", Date.from(now));
+        if (lockEnabled) {
+            update.set("lockUntil", Date.from(now.plus(lockLease)));
+        } else {
+            update.unset("lockUntil");
+        }
+
+        final FindAndModifyOptions options = FindAndModifyOptions.options().returnNew(true);
+        final Document claimed = this.mongoTemplate.findAndModify(query, update, options, Document.class, COLLECTION_NAME);
+        if (claimed == null) {
+            return null;
+        }
+        return this.toInboxRecord(claimed);
     }
 
     private String requireNonBlank(final String value,

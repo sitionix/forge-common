@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sitionix.forge.inbox.core.model.InboxRecord;
 import com.sitionix.forge.inbox.core.model.InboxStatus;
 import com.sitionix.forge.inbox.core.port.InboxStorage;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.Query;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 public class PostgresInboxStorage implements InboxStorage {
 
@@ -27,15 +30,28 @@ public class PostgresInboxStorage implements InboxStorage {
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final EntityManager entityManager;
 
     public PostgresInboxStorage(final NamedParameterJdbcTemplate jdbcTemplate) {
-        this(jdbcTemplate, new ObjectMapper().findAndRegisterModules());
+        this(jdbcTemplate, new ObjectMapper().findAndRegisterModules(), null);
     }
 
     public PostgresInboxStorage(final NamedParameterJdbcTemplate jdbcTemplate,
                                 final ObjectMapper objectMapper) {
+        this(jdbcTemplate, objectMapper, null);
+    }
+
+    public PostgresInboxStorage(final NamedParameterJdbcTemplate jdbcTemplate,
+                                final EntityManager entityManager) {
+        this(jdbcTemplate, new ObjectMapper().findAndRegisterModules(), entityManager);
+    }
+
+    public PostgresInboxStorage(final NamedParameterJdbcTemplate jdbcTemplate,
+                                final ObjectMapper objectMapper,
+                                final EntityManager entityManager) {
         this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate is required");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper is required");
+        this.entityManager = entityManager;
     }
 
     @Override
@@ -44,7 +60,16 @@ public class PostgresInboxStorage implements InboxStorage {
         final InboxRecord inboxRecord = Objects.requireNonNull(record, "record is required");
         final String idempotencyKey = this.requireNonBlank(inboxRecord.getIdempotencyKey(), "idempotencyKey");
         final Long aggregateTypeId = this.resolveAggregateTypeId(inboxRecord.getAggregateType());
+        if (this.entityManager != null) {
+            this.enqueueWithJpa(inboxRecord, idempotencyKey, aggregateTypeId);
+            return;
+        }
+        this.enqueueWithJdbc(inboxRecord, idempotencyKey, aggregateTypeId);
+    }
 
+    private void enqueueWithJdbc(final InboxRecord inboxRecord,
+                                 final String idempotencyKey,
+                                 final Long aggregateTypeId) {
         final String sql = """
                 INSERT INTO %s (
                     event_type,
@@ -107,6 +132,71 @@ public class PostgresInboxStorage implements InboxStorage {
                 .addValue("updatedAt", Timestamp.from(inboxRecord.getUpdatedAt()));
 
         this.jdbcTemplate.update(sql, parameters);
+    }
+
+    private void enqueueWithJpa(final InboxRecord inboxRecord,
+                                final String idempotencyKey,
+                                final Long aggregateTypeId) {
+        final String sql = """
+                INSERT INTO %s (
+                    event_type,
+                    payload,
+                    headers,
+                    metadata,
+                    trace_id,
+                    idempotency_key,
+                    aggregate_type_id,
+                    aggregate_id,
+                    initiator_type,
+                    initiator_id,
+                    status_id,
+                    retry_count,
+                    next_retry_at,
+                    last_error,
+                    lock_until,
+                    created_at,
+                    updated_at
+                ) VALUES (
+                    :eventType,
+                    :payload,
+                    CAST(:headers AS JSONB),
+                    CAST(:metadata AS JSONB),
+                    :traceId,
+                    :idempotencyKey,
+                    :aggregateTypeId,
+                    :aggregateId,
+                    :initiatorType,
+                    :initiatorId,
+                    :statusId,
+                    :retryCount,
+                    :nextRetryAt,
+                    :lastError,
+                    :lockUntil,
+                    :createdAt,
+                    :updatedAt
+                )
+                ON CONFLICT (idempotency_key) DO NOTHING
+                """.formatted(TABLE_NAME);
+
+        final Query query = this.entityManager.createNativeQuery(sql);
+        query.setParameter("eventType", inboxRecord.getEventType());
+        query.setParameter("payload", inboxRecord.getPayload());
+        query.setParameter("headers", this.writeStringMap(inboxRecord.getHeaders()));
+        query.setParameter("metadata", this.writeStringMap(inboxRecord.getMetadata()));
+        query.setParameter("traceId", inboxRecord.getTraceId());
+        query.setParameter("idempotencyKey", idempotencyKey);
+        query.setParameter("aggregateTypeId", aggregateTypeId);
+        query.setParameter("aggregateId", inboxRecord.getAggregateId());
+        query.setParameter("initiatorType", inboxRecord.getInitiatorType());
+        query.setParameter("initiatorId", inboxRecord.getInitiatorId());
+        query.setParameter("statusId", InboxStatus.PENDING.getId());
+        query.setParameter("retryCount", inboxRecord.getAttempts());
+        query.setParameter("nextRetryAt", Timestamp.from(inboxRecord.getNextAttemptAt()));
+        query.setParameter("lastError", inboxRecord.getLastError());
+        query.setParameter("lockUntil", null);
+        query.setParameter("createdAt", Timestamp.from(inboxRecord.getCreatedAt()));
+        query.setParameter("updatedAt", Timestamp.from(inboxRecord.getUpdatedAt()));
+        query.executeUpdate();
     }
 
     @Override
@@ -334,13 +424,13 @@ public class PostgresInboxStorage implements InboxStorage {
             if (raw == null || raw.isEmpty()) {
                 return Map.of();
             }
-            final Map<String, String> result = new LinkedHashMap<>();
-            for (final Map.Entry<String, Object> entry : raw.entrySet()) {
-                if (entry.getKey() == null || entry.getValue() == null) {
-                    continue;
-                }
-                result.put(entry.getKey(), String.valueOf(entry.getValue()));
-            }
+            final Map<String, String> result = raw.entrySet().stream()
+                    .filter(entry -> entry.getKey() != null && entry.getValue() != null)
+                    .collect(Collectors.toMap(
+                            Map.Entry::getKey,
+                            entry -> String.valueOf(entry.getValue()),
+                            (left, right) -> left,
+                            LinkedHashMap::new));
             return result.isEmpty() ? Map.of() : Map.copyOf(result);
         } catch (final JsonProcessingException exception) {
             throw new IllegalStateException("Could not deserialize inbox map field", exception);

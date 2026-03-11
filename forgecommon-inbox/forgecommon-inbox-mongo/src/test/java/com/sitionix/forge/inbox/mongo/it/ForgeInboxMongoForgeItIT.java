@@ -1,18 +1,17 @@
-package com.sitionix.forge.inbox.postgres.it;
+package com.sitionix.forge.inbox.mongo.it;
 
 import com.sitionix.forge.inbox.core.model.InboxDispatchSummary;
-import com.sitionix.forge.inbox.core.model.InboxStatus;
 import com.sitionix.forge.inbox.core.port.ForgeInbox;
 import com.sitionix.forge.inbox.core.port.ForgeInboxWorker;
 import com.sitionix.forge.inbox.core.port.InboxReceiveMetadata;
-import com.sitionix.forge.inbox.postgres.entity.ForgeInboxEventEntity;
-import com.sitionix.forge.inbox.postgres.it.infra.TestManager;
-import com.sitionix.forge.inbox.postgres.it.support.AggregateInboxPayload;
-import com.sitionix.forge.inbox.postgres.it.support.FailingInboxPayload;
-import com.sitionix.forge.inbox.postgres.it.support.ForgeInboxPostgresItConfig;
-import com.sitionix.forge.inbox.postgres.it.support.ForgeInboxPostgresPublishedEvents;
-import com.sitionix.forge.inbox.postgres.it.support.SuccessInboxPayload;
-import com.sitionix.forge.inbox.postgres.it.support.UnsupportedInboxPayload;
+import com.sitionix.forge.inbox.mongo.it.entity.ForgeInboxMongoEventEntity;
+import com.sitionix.forge.inbox.mongo.it.infra.TestManager;
+import com.sitionix.forge.inbox.mongo.it.support.AggregateInboxPayload;
+import com.sitionix.forge.inbox.mongo.it.support.FailingInboxPayload;
+import com.sitionix.forge.inbox.mongo.it.support.ForgeInboxMongoItConfig;
+import com.sitionix.forge.inbox.mongo.it.support.ForgeInboxMongoPublishedEvents;
+import com.sitionix.forge.inbox.mongo.it.support.SuccessInboxPayload;
+import com.sitionix.forge.inbox.mongo.it.support.UnsupportedInboxPayload;
 import com.sitionix.forgeit.core.test.IntegrationTest;
 import com.sitionix.forgeit.domain.contract.DbContractsDsl;
 import com.sitionix.forgeit.domain.contract.clean.CleanupPolicy;
@@ -32,15 +31,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @IntegrationTest(properties = {
-        "forge.inbox.domain-store=POSTGRES",
+        "forge.inbox.domain-store=MONGO",
         "forge.inbox.worker.enabled=false",
         "forge.inbox.cleanup.enabled=false",
         "forge.inbox.worker.batch-size=1",
         "forge.inbox.worker.retry-delay=PT0S",
         "forge.inbox.worker.max-retries=2"
 })
-@Import(ForgeInboxPostgresItConfig.class)
-class ForgeInboxPostgresForgeItIT {
+@Import(ForgeInboxMongoItConfig.class)
+class ForgeInboxMongoForgeItIT {
 
     @Autowired
     private ForgeInbox<Object> forgeInbox;
@@ -52,13 +51,13 @@ class ForgeInboxPostgresForgeItIT {
     private TestManager testManager;
 
     @Autowired
-    private ForgeInboxPostgresPublishedEvents publishedEvents;
+    private ForgeInboxMongoPublishedEvents publishedEvents;
 
     @BeforeEach
     void setUp() {
-        this.testManager.postgresql()
+        this.testManager.mongo()
                 .clearAllData(List.of(
-                        DbContractsDsl.entity(ForgeInboxEventEntity.class)
+                        DbContractsDsl.entity(ForgeInboxMongoEventEntity.class)
                                 .cleanupPolicy(CleanupPolicy.DELETE_ALL)
                                 .build()));
         this.publishedEvents.clear();
@@ -89,12 +88,12 @@ class ForgeInboxPostgresForgeItIT {
         assertThat(summary.getProcessed()).isEqualTo(1);
         assertThat(summary.getFailed()).isEqualTo(0);
         assertThat(this.publishedEvents.values()).containsExactly("EMAIL_VERIFY");
-        this.testManager.postgresql().get(ForgeInboxEventEntity.class)
+        this.testManager.mongo().get(ForgeInboxMongoEventEntity.class)
                 .hasSize(1)
                 .singleElement()
                 .andExpected(entity -> Objects.equals(entity.getEventType(), "EMAIL_VERIFY"))
-                .andExpected(entity -> Objects.equals(entity.getStatusId(), InboxStatus.PROCESSED.getId()))
-                .andExpected(entity -> Objects.equals(entity.getRetryCount(), 0))
+                .andExpected(entity -> Objects.equals(entity.getStatus(), "PROCESSED"))
+                .andExpected(entity -> Objects.equals(entity.getAttempts(), 0))
                 .assertEntity();
     }
 
@@ -111,11 +110,11 @@ class ForgeInboxPostgresForgeItIT {
         assertThat(summary.getProcessed()).isEqualTo(0);
         assertThat(summary.getFailed()).isEqualTo(0);
         assertThat(this.publishedEvents.values()).isEmpty();
-        this.testManager.postgresql().get(ForgeInboxEventEntity.class)
+        this.testManager.mongo().get(ForgeInboxMongoEventEntity.class)
                 .hasSize(1)
                 .singleElement()
                 .andExpected(entity -> Objects.equals(entity.getEventType(), "EMAIL_UNKNOWN"))
-                .andExpected(entity -> Objects.equals(entity.getStatusId(), InboxStatus.PENDING.getId()))
+                .andExpected(entity -> Objects.equals(entity.getStatus(), "PENDING"))
                 .assertEntity();
     }
 
@@ -131,12 +130,12 @@ class ForgeInboxPostgresForgeItIT {
         assertThat(summary.getClaimed()).isEqualTo(1);
         assertThat(summary.getProcessed()).isEqualTo(0);
         assertThat(summary.getFailed()).isEqualTo(1);
-        this.testManager.postgresql().get(ForgeInboxEventEntity.class)
+        this.testManager.mongo().get(ForgeInboxMongoEventEntity.class)
                 .hasSize(1)
                 .singleElement()
                 .andExpected(entity -> Objects.equals(entity.getEventType(), "EMAIL_FAIL"))
-                .andExpected(entity -> Objects.equals(entity.getStatusId(), InboxStatus.FAILED.getId()))
-                .andExpected(entity -> Objects.equals(entity.getRetryCount(), 1))
+                .andExpected(entity -> Objects.equals(entity.getStatus(), "FAILED"))
+                .andExpected(entity -> Objects.equals(entity.getAttempts(), 1))
                 .andExpected(entity -> Objects.nonNull(entity.getLastError()) && entity.getLastError().contains("Forced publish failure"))
                 .assertEntity();
     }
@@ -157,11 +156,11 @@ class ForgeInboxPostgresForgeItIT {
         assertThat(secondSummary.getClaimed()).isEqualTo(1);
         assertThat(secondSummary.getProcessed()).isEqualTo(0);
         assertThat(secondSummary.getFailed()).isEqualTo(1);
-        this.testManager.postgresql().get(ForgeInboxEventEntity.class)
+        this.testManager.mongo().get(ForgeInboxMongoEventEntity.class)
                 .hasSize(1)
                 .singleElement()
-                .andExpected(entity -> Objects.equals(entity.getStatusId(), InboxStatus.DEAD.getId()))
-                .andExpected(entity -> Objects.equals(entity.getRetryCount(), 2))
+                .andExpected(entity -> Objects.equals(entity.getStatus(), "DEAD"))
+                .andExpected(entity -> Objects.equals(entity.getAttempts(), 2))
                 .assertEntity();
     }
 
@@ -173,12 +172,12 @@ class ForgeInboxPostgresForgeItIT {
 
         //when
         final InboxDispatchSummary firstSummary = this.forgeInboxWorker.dispatchPendingEvents();
-        final List<ForgeInboxEventEntity> afterFirstDispatch = this.testManager.postgresql()
-                .get(ForgeInboxEventEntity.class)
+        final List<ForgeInboxMongoEventEntity> afterFirstDispatch = this.testManager.mongo()
+                .get(ForgeInboxMongoEventEntity.class)
                 .getAll();
         final InboxDispatchSummary secondSummary = this.forgeInboxWorker.dispatchPendingEvents();
-        final List<ForgeInboxEventEntity> afterSecondDispatch = this.testManager.postgresql()
-                .get(ForgeInboxEventEntity.class)
+        final List<ForgeInboxMongoEventEntity> afterSecondDispatch = this.testManager.mongo()
+                .get(ForgeInboxMongoEventEntity.class)
                 .getAll();
 
         //then
@@ -190,16 +189,16 @@ class ForgeInboxPostgresForgeItIT {
         assertThat(secondSummary.getFailed()).isEqualTo(0);
 
         final long processedAfterFirstDispatch = afterFirstDispatch.stream()
-                .filter(entity -> Objects.equals(entity.getStatusId(), InboxStatus.PROCESSED.getId()))
+                .filter(entity -> Objects.equals(entity.getStatus(), "PROCESSED"))
                 .count();
         final long pendingAfterFirstDispatch = afterFirstDispatch.stream()
-                .filter(entity -> Objects.equals(entity.getStatusId(), InboxStatus.PENDING.getId()))
+                .filter(entity -> Objects.equals(entity.getStatus(), "PENDING"))
                 .count();
         assertThat(processedAfterFirstDispatch).isEqualTo(1);
         assertThat(pendingAfterFirstDispatch).isEqualTo(1);
 
         final long processedAfterSecondDispatch = afterSecondDispatch.stream()
-                .filter(entity -> Objects.equals(entity.getStatusId(), InboxStatus.PROCESSED.getId()))
+                .filter(entity -> Objects.equals(entity.getStatus(), "PROCESSED"))
                 .count();
         assertThat(processedAfterSecondDispatch).isEqualTo(2);
         assertThat(this.publishedEvents.values()).hasSize(2);
@@ -231,11 +230,11 @@ class ForgeInboxPostgresForgeItIT {
         assertThat(processed).isEqualTo(1);
         assertThat(failed).isEqualTo(0);
         assertThat(this.publishedEvents.values()).hasSize(1);
-        this.testManager.postgresql().get(ForgeInboxEventEntity.class)
+        this.testManager.mongo().get(ForgeInboxMongoEventEntity.class)
                 .hasSize(1)
                 .singleElement()
-                .andExpected(entity -> Objects.equals(entity.getStatusId(), InboxStatus.PROCESSED.getId()))
-                .andExpected(entity -> Objects.equals(entity.getRetryCount(), 0))
+                .andExpected(entity -> Objects.equals(entity.getStatus(), "PROCESSED"))
+                .andExpected(entity -> Objects.equals(entity.getAttempts(), 0))
                 .assertEntity();
     }
 
@@ -244,8 +243,8 @@ class ForgeInboxPostgresForgeItIT {
         //given
         final AggregateInboxPayload payload = new AggregateInboxPayload("site-1");
 
-        //then
-        assertThatThrownBy(() -> this.forgeInbox.receive(payload, new InboxReceiveMetadata(
+        //when
+        this.forgeInbox.receive(payload, new InboxReceiveMetadata(
                 "EMAIL_AGGREGATE",
                 "idemp-aggregate-1",
                 null,
@@ -255,26 +254,14 @@ class ForgeInboxPostgresForgeItIT {
                 501L,
                 null,
                 null,
-                null)))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Unknown inbox aggregateType 'SITE'");
-        this.testManager.postgresql().get(ForgeInboxEventEntity.class)
-                .hasSize(0);
-    }
-
-    @Test
-    void givenDuplicateIdempotencyKeyWithWhitespace_whenReceiveTwice_thenPersistSingleRecordWithNormalizedKey() {
-        //given
-        this.forgeInbox.receive(new SuccessInboxPayload("dup-1"), new InboxReceiveMetadata("EMAIL_VERIFY", " idemp-dup-1 ", null));
-        this.forgeInbox.receive(new SuccessInboxPayload("dup-2"), new InboxReceiveMetadata("EMAIL_VERIFY", "idemp-dup-1", null));
-
-        //when
+                null));
 
         //then
-        this.testManager.postgresql().get(ForgeInboxEventEntity.class)
+        this.testManager.mongo().get(ForgeInboxMongoEventEntity.class)
                 .hasSize(1)
                 .singleElement()
-                .andExpected(entity -> Objects.equals(entity.getIdempotencyKey(), "idemp-dup-1"))
+                .andExpected(entity -> Objects.equals(entity.getAggregateType(), "SITE"))
+                .andExpected(entity -> Objects.equals(entity.getAggregateId(), 501L))
                 .assertEntity();
     }
 
@@ -301,7 +288,7 @@ class ForgeInboxPostgresForgeItIT {
         assertThat(summary.getProcessed()).isEqualTo(0);
         assertThat(summary.getFailed()).isEqualTo(0);
         assertThat(this.publishedEvents.values()).isEmpty();
-        this.testManager.postgresql().get(ForgeInboxEventEntity.class)
+        this.testManager.mongo().get(ForgeInboxMongoEventEntity.class)
                 .hasSize(0);
     }
 }

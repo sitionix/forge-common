@@ -5,7 +5,6 @@ import com.sitionix.forge.inbox.core.model.ForgeInboxEventTypes;
 import com.sitionix.forge.inbox.core.model.InboxEvent;
 import com.sitionix.forge.inbox.core.model.InboxRecord;
 import com.sitionix.forge.inbox.core.port.ForgeInboxEventHandler;
-import com.sitionix.forge.inbox.core.port.ForgeInboxPayload;
 import com.sitionix.forge.inbox.core.port.InboxHandler;
 import com.sitionix.forge.inbox.core.port.InboxPayloadCodec;
 import org.springframework.beans.factory.ListableBeanFactory;
@@ -15,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 public class SpringEnumInboxHandler implements InboxHandler {
 
@@ -57,26 +57,39 @@ public class SpringEnumInboxHandler implements InboxHandler {
         if (configuredEventTypes.isEmpty()) {
             throw new IllegalStateException("ForgeInboxEventTypes must declare at least one eventType");
         }
-        final Map<String, HandlerBinding> bindings = new LinkedHashMap<>();
-        for (final String configuredEventType : configuredEventTypes) {
-            final String eventType = this.normalize(configuredEventType);
-            if (eventType == null) {
-                throw new IllegalStateException("ForgeInboxEventTypes contains blank eventType");
-            }
-            final ForgeInboxEventType eventTypeConfig = eventTypes.byDescription(eventType);
-            final Class<? extends ForgeInboxPayload> payloadClass = Objects.requireNonNull(
-                    eventTypeConfig.payloadClass(),
-                    "payloadClass is required for eventType: " + eventTypeConfig.getDescription());
-            final ForgeInboxEventHandler<?> handler = this.resolveHandler(beanFactory, payloadClass);
-            if (bindings.putIfAbsent(eventType, new HandlerBinding(payloadClass, handler)) != null) {
-                throw new IllegalStateException("Duplicate inbox handler binding for eventType: " + eventType);
-            }
-        }
+        final Map<String, HandlerBinding> bindings = configuredEventTypes.stream()
+                .map(this::normalizeConfiguredEventType)
+                .collect(Collectors.toMap(
+                        eventType -> eventType,
+                        eventType -> this.resolveBinding(eventTypes, beanFactory, eventType),
+                        (left, right) -> {
+                            throw new IllegalStateException("Duplicate inbox handler binding detected");
+                        },
+                        LinkedHashMap::new));
         return Map.copyOf(bindings);
     }
 
+    private String normalizeConfiguredEventType(final String configuredEventType) {
+        final String eventType = this.normalize(configuredEventType);
+        if (eventType == null) {
+            throw new IllegalStateException("ForgeInboxEventTypes contains blank eventType");
+        }
+        return eventType;
+    }
+
+    private HandlerBinding resolveBinding(final ForgeInboxEventTypes eventTypes,
+                                          final ListableBeanFactory beanFactory,
+                                          final String eventType) {
+        final ForgeInboxEventType eventTypeConfig = eventTypes.byDescription(eventType);
+        final Class<?> payloadClass = Objects.requireNonNull(
+                eventTypeConfig.payloadClass(),
+                "payloadClass is required for eventType: " + eventTypeConfig.getDescription());
+        final ForgeInboxEventHandler<?> handler = this.resolveHandler(beanFactory, payloadClass);
+        return new HandlerBinding(payloadClass, handler);
+    }
+
     private ForgeInboxEventHandler<?> resolveHandler(final ListableBeanFactory beanFactory,
-                                                     final Class<? extends ForgeInboxPayload> payloadClass) {
+                                                     final Class<?> payloadClass) {
         final ResolvableType handlerType = ResolvableType.forClassWithGenerics(ForgeInboxEventHandler.class, payloadClass);
         final Object rawBean = beanFactory.getBeanProvider(handlerType).getObject();
         if (!(rawBean instanceof ForgeInboxEventHandler<?> handler)) {
@@ -86,8 +99,8 @@ public class SpringEnumInboxHandler implements InboxHandler {
     }
 
     @SuppressWarnings("unchecked")
-    private <P extends ForgeInboxPayload> void dispatch(final InboxRecord record,
-                                                        final HandlerBinding rawBinding) throws Exception {
+    private <P> void dispatch(final InboxRecord record,
+                              final HandlerBinding rawBinding) throws Exception {
         final Class<P> payloadClass = (Class<P>) rawBinding.payloadClass();
         final ForgeInboxEventHandler<P> handler = (ForgeInboxEventHandler<P>) rawBinding.handler();
         final P payload = this.inboxPayloadCodec.deserialize(record.getPayload(), payloadClass);
@@ -111,7 +124,7 @@ public class SpringEnumInboxHandler implements InboxHandler {
     }
 
     private record HandlerBinding(
-            Class<? extends ForgeInboxPayload> payloadClass,
+            Class<?> payloadClass,
             ForgeInboxEventHandler<?> handler
     ) {
     }

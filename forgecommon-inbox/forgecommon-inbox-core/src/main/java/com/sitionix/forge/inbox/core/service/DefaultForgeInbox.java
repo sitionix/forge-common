@@ -1,7 +1,6 @@
 package com.sitionix.forge.inbox.core.service;
 
 import com.sitionix.forge.inbox.core.model.InboxRecord;
-import com.sitionix.forge.inbox.core.port.ForgeInboxPayload;
 import com.sitionix.forge.inbox.core.port.ForgeInbox;
 import com.sitionix.forge.inbox.core.port.InboxReceiveMetadata;
 import com.sitionix.forge.inbox.core.port.InboxPayloadCodec;
@@ -10,7 +9,7 @@ import com.sitionix.forge.inbox.core.port.InboxStorage;
 import java.time.Clock;
 import java.util.Objects;
 
-public class DefaultForgeInbox<P extends ForgeInboxPayload> implements ForgeInbox<P> {
+public class DefaultForgeInbox<P> implements ForgeInbox<P> {
 
     private final InboxStorage storage;
     private final InboxPayloadCodec inboxPayloadCodec;
@@ -29,9 +28,8 @@ public class DefaultForgeInbox<P extends ForgeInboxPayload> implements ForgeInbo
                         final InboxReceiveMetadata metadata) {
         this.validatePayload(payload);
         final InboxReceiveMetadata validatedMetadata = this.validateMetadata(metadata);
-        final InboxRecord inboxRecord = this.inboxRecordFactory.create(payload, validatedMetadata);
         final String encodedPayload = this.resolvePayload(payload);
-        this.storage.enqueue(this.inboxRecordFactory.withPayload(inboxRecord, encodedPayload));
+        this.storage.enqueue(this.inboxRecordFactory.create(validatedMetadata, encodedPayload));
     }
 
     private void validatePayload(final P payload) {

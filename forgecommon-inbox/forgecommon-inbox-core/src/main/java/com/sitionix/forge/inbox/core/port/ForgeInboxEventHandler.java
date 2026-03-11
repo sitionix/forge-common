@@ -5,7 +5,7 @@ import com.sitionix.forge.inbox.core.model.InboxEvent;
 /**
  * Adapter contract responsible for handling claimed inbox records.
  */
-public interface ForgeInboxEventHandler<P extends ForgeInboxPayload> {
+public interface ForgeInboxEventHandler<P> {
 
     /**
      * Application-specific handling operation.

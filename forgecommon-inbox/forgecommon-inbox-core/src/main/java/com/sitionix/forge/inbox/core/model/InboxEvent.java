@@ -1,6 +1,5 @@
 package com.sitionix.forge.inbox.core.model;
 
-import com.sitionix.forge.inbox.core.port.ForgeInboxPayload;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -8,7 +7,7 @@ import java.time.Instant;
 
 @Getter
 @Builder
-public class InboxEvent<P extends ForgeInboxPayload> {
+public class InboxEvent<P> {
 
     private final String id;
     private final P payload;

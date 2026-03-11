@@ -1,5 +1,6 @@
 package com.sitionix.forge.inbox.core.model;
 
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -20,7 +21,7 @@ public class EnumForgeInboxEventTypes<E extends Enum<E> & ForgeInboxEventType> i
         }
 
         final Map<String, E> mapping = new LinkedHashMap<>();
-        for (final E value : values) {
+        Arrays.stream(values).forEach(value -> {
             final String description = this.normalize(value.getDescription());
             if (description == null) {
                 throw new IllegalArgumentException("eventType description is required for enum value: " + value.name());
@@ -31,7 +32,7 @@ public class EnumForgeInboxEventTypes<E extends Enum<E> & ForgeInboxEventType> i
             if (value.payloadClass() == null) {
                 throw new IllegalArgumentException("payloadClass is required for enum value: " + value.name());
             }
-        }
+        });
         this.byDescription = Map.copyOf(mapping);
     }
 

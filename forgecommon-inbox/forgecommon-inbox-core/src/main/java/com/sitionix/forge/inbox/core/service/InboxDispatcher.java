@@ -53,31 +53,34 @@ public class InboxDispatcher {
             return InboxDispatchSummary.empty();
         }
 
-        int processed = 0;
-        int failed = 0;
-
-        for (final InboxRecord event : events) {
-            try {
-                this.handler.handle(event);
-                this.storage.markProcessed(event.getId(), now, event.getUpdatedAt());
-                processed++;
-            } catch (final Exception exception) {
-                this.storage.markFailed(
-                        event.getId(),
-                        this.formatErrorMessage(exception),
-                        this.policy.getRetryDelay(),
-                        this.policy.getMaxRetries(),
-                        now,
-                        event.getUpdatedAt());
-                failed++;
-            }
-        }
+        final int processed = (int) events.stream()
+                .filter(event -> this.processEvent(event, now))
+                .count();
+        final int failed = events.size() - processed;
 
         return InboxDispatchSummary.builder()
                 .claimed(events.size())
                 .processed(processed)
                 .failed(failed)
                 .build();
+    }
+
+    private boolean processEvent(final InboxRecord event,
+                                 final Instant now) {
+        try {
+            this.handler.handle(event);
+            this.storage.markProcessed(event.getId(), now, event.getUpdatedAt());
+            return true;
+        } catch (final Exception exception) {
+            this.storage.markFailed(
+                    event.getId(),
+                    this.formatErrorMessage(exception),
+                    this.policy.getRetryDelay(),
+                    this.policy.getMaxRetries(),
+                    now,
+                    event.getUpdatedAt());
+            return false;
+        }
     }
 
     private String formatErrorMessage(final Exception exception) {

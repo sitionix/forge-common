@@ -9,7 +9,6 @@ import com.sitionix.forge.inbox.core.model.ForgeInboxEventTypes;
 import com.sitionix.forge.inbox.core.model.InboxEvent;
 import com.sitionix.forge.inbox.core.port.ForgeInbox;
 import com.sitionix.forge.inbox.core.port.ForgeInboxEventHandler;
-import com.sitionix.forge.inbox.core.port.ForgeInboxPayload;
 import com.sitionix.forge.inbox.core.port.ForgeInboxWorker;
 import com.sitionix.forge.inbox.core.port.InboxHandler;
 import com.sitionix.forge.inbox.core.port.InboxStorage;
@@ -160,11 +159,11 @@ class ForgeInboxAutoConfigurationTest {
 
         private final Long id;
         private final String description;
-        private final Class<? extends ForgeInboxPayload> payloadClass;
+        private final Class<?> payloadClass;
 
         TestEventType(final Long id,
                       final String description,
-                      final Class<? extends ForgeInboxPayload> payloadClass) {
+                      final Class<?> payloadClass) {
             this.id = id;
             this.description = description;
             this.payloadClass = payloadClass;
@@ -181,11 +180,11 @@ class ForgeInboxAutoConfigurationTest {
         }
 
         @Override
-        public Class<? extends ForgeInboxPayload> payloadClass() {
+        public Class<?> payloadClass() {
             return this.payloadClass;
         }
     }
 
-    private record TestPayload(String value) implements ForgeInboxPayload {
+    private record TestPayload(String value) {
     }
 }
