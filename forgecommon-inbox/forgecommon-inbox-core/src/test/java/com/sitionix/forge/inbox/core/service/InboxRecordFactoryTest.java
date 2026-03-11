@@ -4,6 +4,7 @@ import com.sitionix.forge.inbox.core.model.InboxAggregateType;
 import com.sitionix.forge.inbox.core.model.InboxRecord;
 import com.sitionix.forge.inbox.core.model.InboxStatus;
 import com.sitionix.forge.inbox.core.port.ForgeInboxPayload;
+import com.sitionix.forge.inbox.core.port.InboxReceiveMetadata;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -38,14 +39,15 @@ class InboxRecordFactoryTest {
                 "1");
 
         //when
-        final InboxRecord actual = this.inboxRecordFactory.create(payload, "EMAIL_VERIFY");
+        final InboxRecord actual = this.inboxRecordFactory.create(payload, new InboxReceiveMetadata("EMAIL_VERIFY", "idemp-1", "trace-meta-1"));
 
         //then
         assertThat(actual.getEventType()).isEqualTo("EMAIL_VERIFY");
         assertThat(actual.getPayload()).isNull();
         assertThat(actual.getHeaders()).isEqualTo(Map.of("header-1", "value-1"));
         assertThat(actual.getMetadata()).isEqualTo(Map.of("meta-1", "value-1"));
-        assertThat(actual.getTraceId()).isEqualTo("trace-1");
+        assertThat(actual.getTraceId()).isEqualTo("trace-meta-1");
+        assertThat(actual.getIdempotencyKey()).isEqualTo("idemp-1");
         assertThat(actual.getAggregateType()).isEqualTo("SITE");
         assertThat(actual.getAggregateId()).isEqualTo(10L);
         assertThat(actual.getInitiatorType()).isEqualTo("SYSTEM");
@@ -71,7 +73,7 @@ class InboxRecordFactoryTest {
                 "1");
 
         //when
-        final InboxRecord actual = this.inboxRecordFactory.create(payload, "EMAIL_VERIFY");
+        final InboxRecord actual = this.inboxRecordFactory.create(payload, new InboxReceiveMetadata("EMAIL_VERIFY", null, null));
 
         //then
         assertThat(actual.getAggregateType()).isNull();
@@ -89,7 +91,7 @@ class InboxRecordFactoryTest {
         final LegacyPayload payload = new LegacyPayload(100L);
 
         //when
-        final InboxRecord actual = this.inboxRecordFactory.create(payload, "EMAIL_VERIFY");
+        final InboxRecord actual = this.inboxRecordFactory.create(payload, new InboxReceiveMetadata("EMAIL_VERIFY", null, null));
 
         //then
         assertThat(actual.getAggregateType()).isEqualTo("USER");
@@ -123,11 +125,6 @@ class InboxRecordFactoryTest {
                                Map<String, String> metadata,
                                String initiatorType,
                                String initiatorId) implements ForgeInboxPayload {
-
-        @Override
-        public String eventType() {
-            return "EMAIL_VERIFY";
-        }
 
         @Override
         public String traceId() {
@@ -171,11 +168,6 @@ class InboxRecordFactoryTest {
     }
 
     private record LegacyPayload(Long userId) implements ForgeInboxPayload {
-
-        @Override
-        public String eventType() {
-            return "EMAIL_VERIFY";
-        }
 
         @Override
         public InboxAggregateType aggregateType() {

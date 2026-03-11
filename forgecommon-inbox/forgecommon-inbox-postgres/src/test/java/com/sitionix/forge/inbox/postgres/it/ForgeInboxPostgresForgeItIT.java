@@ -2,11 +2,15 @@ package com.sitionix.forge.inbox.postgres.it;
 
 import com.sitionix.forge.inbox.core.model.InboxEvent;
 import com.sitionix.forge.inbox.core.model.InboxDispatchSummary;
+import com.sitionix.forge.inbox.core.model.EnumForgeInboxEventTypes;
+import com.sitionix.forge.inbox.core.model.ForgeInboxEventType;
+import com.sitionix.forge.inbox.core.model.ForgeInboxEventTypes;
 import com.sitionix.forge.inbox.core.model.InboxStatus;
 import com.sitionix.forge.inbox.core.port.ForgeInbox;
 import com.sitionix.forge.inbox.core.port.ForgeInboxEventHandler;
 import com.sitionix.forge.inbox.core.port.ForgeInboxPayload;
 import com.sitionix.forge.inbox.core.port.ForgeInboxWorker;
+import com.sitionix.forge.inbox.core.port.InboxReceiveMetadata;
 import com.sitionix.forge.inbox.postgres.entity.ForgeInboxEventEntity;
 import com.sitionix.forge.inbox.postgres.it.infra.TestManager;
 import com.sitionix.forgeit.core.test.IntegrationTest;
@@ -75,7 +79,7 @@ class ForgeInboxPostgresForgeItIT {
     @Test
     void givenSupportedPayload_whenDispatchPendingEvents_thenRecordMarkedSentAndPublished() {
         //given
-        this.forgeInbox.receive(new SuccessPayload("ok-1"));
+        this.forgeInbox.receive(new SuccessPayload("ok-1"), new InboxReceiveMetadata("EMAIL_VERIFY", "idemp-ok-1", null));
 
         //when
         final InboxDispatchSummary summary = this.forgeInboxWorker.dispatchPendingEvents();
@@ -95,30 +99,30 @@ class ForgeInboxPostgresForgeItIT {
     }
 
     @Test
-    void givenUnsupportedEventType_whenDispatchPendingEvents_thenRecordMarkedFailed() {
+    void givenUnsupportedEventType_whenDispatchPendingEvents_thenLeaveRecordPending() {
         //given
-        this.forgeInbox.receive(new UnsupportedPayload("unknown-1"));
+        this.forgeInbox.receive(new UnsupportedPayload("unknown-1"), new InboxReceiveMetadata("EMAIL_UNKNOWN", "idemp-unknown-1", null));
 
         //when
         final InboxDispatchSummary summary = this.forgeInboxWorker.dispatchPendingEvents();
 
         //then
-        assertThat(summary.getClaimed()).isEqualTo(1);
+        assertThat(summary.getClaimed()).isEqualTo(0);
         assertThat(summary.getProcessed()).isEqualTo(0);
-        assertThat(summary.getFailed()).isEqualTo(1);
+        assertThat(summary.getFailed()).isEqualTo(0);
         assertThat(SuccessPublisher.PUBLISHED_EVENT_TYPES).isEmpty();
         this.testManager.postgresql().get(ForgeInboxEventEntity.class)
                 .hasSize(1)
                 .singleElement()
                 .andExpected(entity -> Objects.equals(entity.getEventType(), "EMAIL_UNKNOWN"))
-                .andExpected(entity -> Objects.equals(entity.getStatusId(), InboxStatus.FAILED.getId()))
+                .andExpected(entity -> Objects.equals(entity.getStatusId(), InboxStatus.PENDING.getId()))
                 .assertEntity();
     }
 
     @Test
     void givenPublisherFailure_whenDispatchPendingEvents_thenRecordMarkedFailed() {
         //given
-        this.forgeInbox.receive(new FailingPayload("fail-1"));
+        this.forgeInbox.receive(new FailingPayload("fail-1"), new InboxReceiveMetadata("EMAIL_FAIL", "idemp-fail-1", null));
 
         //when
         final InboxDispatchSummary summary = this.forgeInboxWorker.dispatchPendingEvents();
@@ -140,7 +144,7 @@ class ForgeInboxPostgresForgeItIT {
     @Test
     void givenSameFailingEventDispatchedTwice_whenRetryLimitReached_thenRecordMarkedDead() {
         //given
-        this.forgeInbox.receive(new FailingPayload("fail-2"));
+        this.forgeInbox.receive(new FailingPayload("fail-2"), new InboxReceiveMetadata("EMAIL_FAIL", "idemp-fail-2", null));
 
         //when
         final InboxDispatchSummary firstSummary = this.forgeInboxWorker.dispatchPendingEvents();
@@ -164,8 +168,8 @@ class ForgeInboxPostgresForgeItIT {
     @Test
     void givenBatchSizeOne_whenDispatchPendingEvents_thenProcessOneRecordPerRun() {
         //given
-        this.forgeInbox.receive(new SuccessPayload("batch-1"));
-        this.forgeInbox.receive(new SuccessPayload("batch-2"));
+        this.forgeInbox.receive(new SuccessPayload("batch-1"), new InboxReceiveMetadata("EMAIL_VERIFY", "idemp-batch-1", null));
+        this.forgeInbox.receive(new SuccessPayload("batch-2"), new InboxReceiveMetadata("EMAIL_VERIFY", "idemp-batch-2", null));
 
         //when
         final InboxDispatchSummary firstSummary = this.forgeInboxWorker.dispatchPendingEvents();
@@ -203,7 +207,7 @@ class ForgeInboxPostgresForgeItIT {
     @Test
     void givenConcurrentWorkers_whenDispatchPendingEvents_thenPublishEventOnlyOnce() throws ExecutionException, InterruptedException {
         //given
-        this.forgeInbox.receive(new SuccessPayload("concurrent-1"));
+        this.forgeInbox.receive(new SuccessPayload("concurrent-1"), new InboxReceiveMetadata("EMAIL_VERIFY", "idemp-concurrent-1", null));
         final ExecutorService executorService = Executors.newFixedThreadPool(2);
 
         //when
@@ -240,7 +244,7 @@ class ForgeInboxPostgresForgeItIT {
         final AggregatePayload payload = new AggregatePayload("site-1");
 
         //then
-        assertThatThrownBy(() -> this.forgeInbox.receive(payload))
+        assertThatThrownBy(() -> this.forgeInbox.receive(payload, new InboxReceiveMetadata("EMAIL_AGGREGATE", "idemp-aggregate-1", null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Unknown inbox aggregateType 'SITE'");
         this.testManager.postgresql().get(ForgeInboxEventEntity.class)
@@ -276,16 +280,15 @@ class ForgeInboxPostgresForgeItIT {
             return new FailingPublisher();
         }
 
+        @Bean
+        ForgeInboxEventTypes eventTypes() {
+            return new EnumForgeInboxEventTypes<>(TestEventType.class);
+        }
     }
 
     static class SuccessPublisher implements ForgeInboxEventHandler<SuccessPayload> {
 
         static final List<String> PUBLISHED_EVENT_TYPES = new CopyOnWriteArrayList<>();
-
-        @Override
-        public Class<SuccessPayload> payloadClass() {
-            return SuccessPayload.class;
-        }
 
         @Override
         public void handle(final InboxEvent<SuccessPayload> event) {
@@ -296,46 +299,21 @@ class ForgeInboxPostgresForgeItIT {
     static class FailingPublisher implements ForgeInboxEventHandler<FailingPayload> {
 
         @Override
-        public Class<FailingPayload> payloadClass() {
-            return FailingPayload.class;
-        }
-
-        @Override
         public void handle(final InboxEvent<FailingPayload> event) {
             throw new IllegalStateException("Forced publish failure");
         }
     }
 
     private record SuccessPayload(String value) implements ForgeInboxPayload {
-
-        @Override
-        public String eventType() {
-            return "EMAIL_VERIFY";
-        }
     }
 
     private record FailingPayload(String value) implements ForgeInboxPayload {
-
-        @Override
-        public String eventType() {
-            return "EMAIL_FAIL";
-        }
     }
 
     private record UnsupportedPayload(String value) implements ForgeInboxPayload {
-
-        @Override
-        public String eventType() {
-            return "EMAIL_UNKNOWN";
-        }
     }
 
     private record AggregatePayload(String value) implements ForgeInboxPayload {
-
-        @Override
-        public String eventType() {
-            return "EMAIL_AGGREGATE";
-        }
 
         @Override
         public String aggregateTypeValue() {
@@ -345,6 +323,38 @@ class ForgeInboxPostgresForgeItIT {
         @Override
         public Long aggregateId() {
             return 501L;
+        }
+    }
+
+    private enum TestEventType implements ForgeInboxEventType {
+        EMAIL_VERIFY(1L, "EMAIL_VERIFY", SuccessPayload.class),
+        EMAIL_FAIL(2L, "EMAIL_FAIL", FailingPayload.class);
+
+        private final Long id;
+        private final String description;
+        private final Class<? extends ForgeInboxPayload> payloadClass;
+
+        TestEventType(final Long id,
+                      final String description,
+                      final Class<? extends ForgeInboxPayload> payloadClass) {
+            this.id = id;
+            this.description = description;
+            this.payloadClass = payloadClass;
+        }
+
+        @Override
+        public Long getId() {
+            return this.id;
+        }
+
+        @Override
+        public String getDescription() {
+            return this.description;
+        }
+
+        @Override
+        public Class<? extends ForgeInboxPayload> payloadClass() {
+            return this.payloadClass;
         }
     }
 }

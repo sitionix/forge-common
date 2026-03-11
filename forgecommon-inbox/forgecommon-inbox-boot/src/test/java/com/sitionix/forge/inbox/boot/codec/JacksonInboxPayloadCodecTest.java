@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class JacksonInboxPayloadCodecTest {
 
@@ -44,6 +45,18 @@ class JacksonInboxPayloadCodecTest {
 
         //then
         assertThat(actual).isEqualTo(given);
+    }
+
+    @Test
+    void givenPayloadWithUnknownField_whenDeserialize_thenThrowException() {
+        //given
+        final String payload = "{\"value\":\"value-1\",\"unknown\":\"unexpected\"}";
+
+        //when
+        //then
+        assertThatThrownBy(() -> this.jacksonInboxPayloadCodec.deserialize(payload, Payload.class))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Failed to deserialize inbox payload");
     }
 
     private record Payload(String value) {

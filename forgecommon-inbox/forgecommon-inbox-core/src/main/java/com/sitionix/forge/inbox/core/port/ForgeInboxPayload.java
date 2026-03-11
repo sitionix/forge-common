@@ -10,11 +10,6 @@ import java.util.Map;
  */
 public interface ForgeInboxPayload {
 
-    /**
-     * @return logical inbox event type used for routing to publishers
-     */
-    String eventType();
-
     default Map<String, String> headers() {
         return Map.of();
     }
@@ -24,13 +19,6 @@ public interface ForgeInboxPayload {
     }
 
     default String traceId() {
-        return null;
-    }
-
-    /**
-     * @return idempotency key used for duplicate processing protection.
-     */
-    default String idempotencyKey() {
         return null;
     }
 

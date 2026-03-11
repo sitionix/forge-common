@@ -2,34 +2,33 @@ package com.sitionix.forge.inbox.boot.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sitionix.forge.inbox.boot.codec.JacksonInboxPayloadCodec;
+import com.sitionix.forge.inbox.boot.service.SpringEnumInboxHandler;
 import com.sitionix.forge.inbox.boot.worker.ScheduledInboxCleanup;
 import com.sitionix.forge.inbox.boot.worker.ScheduledInboxWorker;
+import com.sitionix.forge.inbox.core.model.ForgeInboxEventTypes;
 import com.sitionix.forge.inbox.core.model.InboxWorkerPolicy;
 import com.sitionix.forge.inbox.core.port.ForgeInbox;
-import com.sitionix.forge.inbox.core.port.ForgeInboxEventHandler;
 import com.sitionix.forge.inbox.core.port.ForgeInboxPayload;
 import com.sitionix.forge.inbox.core.port.ForgeInboxWorker;
 import com.sitionix.forge.inbox.core.port.InboxPayloadCodec;
 import com.sitionix.forge.inbox.core.port.InboxHandler;
 import com.sitionix.forge.inbox.core.port.InboxStorage;
-import com.sitionix.forge.inbox.core.service.CompositeInboxHandler;
 import com.sitionix.forge.inbox.core.service.DefaultForgeInbox;
 import com.sitionix.forge.inbox.core.service.InboxDispatcher;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 import javax.sql.DataSource;
 import java.time.Clock;
-import java.util.List;
 
 @AutoConfiguration(afterName = {
         "com.sitionix.forge.inbox.postgres.config.ForgeInboxPostgresAutoConfiguration",
@@ -58,8 +57,9 @@ public class ForgeInboxAutoConfiguration {
     public InboxStartupValidator inboxStartupValidator(final ForgeInboxProperties properties,
                                                        final ObjectProvider<InboxStorage> inboxStorageProvider,
                                                        final ObjectProvider<DataSource> dataSourceProvider,
+                                                       final ObjectProvider<ForgeInboxEventTypes> eventTypesProvider,
                                                        final ListableBeanFactory beanFactory) {
-        return new InboxStartupValidator(properties, inboxStorageProvider, dataSourceProvider, beanFactory);
+        return new InboxStartupValidator(properties, inboxStorageProvider, dataSourceProvider, eventTypesProvider, beanFactory);
     }
 
     @Configuration(proxyBeanMethods = false)
@@ -76,10 +76,11 @@ public class ForgeInboxAutoConfiguration {
 
         @Bean
         @ConditionalOnMissingBean(InboxHandler.class)
-        public InboxHandler inboxHandler(final ObjectProvider<ForgeInboxEventHandler<?>> handlersProvider,
+        @ConditionalOnBean(ForgeInboxEventTypes.class)
+        public InboxHandler inboxHandler(final ForgeInboxEventTypes eventTypes,
+                                         final ListableBeanFactory beanFactory,
                                          final InboxPayloadCodec inboxPayloadCodec) {
-            final List<ForgeInboxEventHandler<?>> handlers = handlersProvider.orderedStream().toList();
-            return new CompositeInboxHandler(handlers, inboxPayloadCodec);
+            return new SpringEnumInboxHandler(eventTypes, beanFactory, inboxPayloadCodec);
         }
 
         @Bean

@@ -3,6 +3,7 @@ package com.sitionix.forge.inbox.core.service;
 import com.sitionix.forge.inbox.core.model.InboxAggregateType;
 import com.sitionix.forge.inbox.core.model.InboxRecord;
 import com.sitionix.forge.inbox.core.port.ForgeInboxPayload;
+import com.sitionix.forge.inbox.core.port.InboxReceiveMetadata;
 import com.sitionix.forge.inbox.core.port.InboxPayloadCodec;
 import com.sitionix.forge.inbox.core.port.InboxStorage;
 import org.junit.jupiter.api.AfterEach;
@@ -47,21 +48,22 @@ class DefaultForgeInboxTest {
     }
 
     @Test
-    void givenPayloadWithAllInboxFields_whenSend_thenPersistPendingRecord() {
+    void givenPayloadWithAllInboxFields_whenReceive_thenPersistPendingRecord() {
         //given
-        final SendPayload payload = new SendPayload("EMAIL_VERIFY",
-                "trace-1",
+        final SendPayload payload = new SendPayload(
+                "trace-from-payload",
                 "SITE",
                 10L,
                 Instant.parse("2026-01-01T10:01:00Z"),
                 Map.of("header-1", "value-1"),
                 Map.of("meta-1", "value-1"));
+        final InboxReceiveMetadata receiveMetadata = new InboxReceiveMetadata("EMAIL_VERIFY", "idemp-1", "trace-from-metadata");
         final ArgumentCaptor<InboxRecord> argumentCaptor = ArgumentCaptor.forClass(InboxRecord.class);
         when(this.inboxPayloadCodec.serialize(payload))
                 .thenReturn("{\"value\":1}");
 
         //when
-        this.forgeInbox.receive(payload);
+        this.forgeInbox.receive(payload, receiveMetadata);
 
         //then
         verify(this.inboxPayloadCodec).serialize(payload);
@@ -71,7 +73,8 @@ class DefaultForgeInboxTest {
         assertThat(actual.getPayload()).isEqualTo("{\"value\":1}");
         assertThat(actual.getHeaders()).isEqualTo(Map.of("header-1", "value-1"));
         assertThat(actual.getMetadata()).isEqualTo(Map.of("meta-1", "value-1"));
-        assertThat(actual.getTraceId()).isEqualTo("trace-1");
+        assertThat(actual.getTraceId()).isEqualTo("trace-from-metadata");
+        assertThat(actual.getIdempotencyKey()).isEqualTo("idemp-1");
         assertThat(actual.getAggregateType()).isEqualTo("SITE");
         assertThat(actual.getAggregateId()).isEqualTo(10L);
         assertThat(actual.getInitiatorType()).isEqualTo("SYSTEM");
@@ -80,21 +83,22 @@ class DefaultForgeInboxTest {
     }
 
     @Test
-    void givenPayloadWithoutOptionalFields_whenSend_thenApplyDefaults() {
+    void givenPayloadWithoutOptionalFields_whenReceive_thenApplyDefaults() {
         //given
-        final SendPayload payload = new SendPayload("EMAIL_VERIFY",
+        final SendPayload payload = new SendPayload(
                 null,
                 "   ",
                 null,
                 null,
                 null,
                 null);
+        final InboxReceiveMetadata receiveMetadata = new InboxReceiveMetadata("EMAIL_VERIFY", null, null);
         final ArgumentCaptor<InboxRecord> argumentCaptor = ArgumentCaptor.forClass(InboxRecord.class);
         when(this.inboxPayloadCodec.serialize(payload))
                 .thenReturn("{\"value\":1}");
 
         //when
-        this.forgeInbox.receive(payload);
+        this.forgeInbox.receive(payload, receiveMetadata);
 
         //then
         verify(this.inboxPayloadCodec).serialize(payload);
@@ -110,9 +114,40 @@ class DefaultForgeInboxTest {
     }
 
     @Test
-    void givenMissingEventTypePayload_whenSend_thenThrowException() {
+    void givenMissingEventTypeMetadata_whenReceive_thenThrowException() {
         //given
-        final SendPayload payload = new SendPayload(" ",
+        final SendPayload payload = new SendPayload(
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+        final InboxReceiveMetadata receiveMetadata = new InboxReceiveMetadata(" ", null, null);
+
+        //when
+        //then
+        assertThatThrownBy(() -> this.forgeInbox.receive(payload, receiveMetadata))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Inbox eventType is required");
+    }
+
+    @Test
+    void givenNullPayload_whenReceive_thenThrowException() {
+        //given
+        final InboxReceiveMetadata receiveMetadata = new InboxReceiveMetadata("EMAIL_VERIFY", null, null);
+
+        //when
+        //then
+        assertThatThrownBy(() -> this.forgeInbox.receive(null, receiveMetadata))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Inbox payload is required");
+    }
+
+    @Test
+    void givenNullMetadata_whenReceive_thenThrowException() {
+        //given
+        final SendPayload payload = new SendPayload(
                 null,
                 null,
                 null,
@@ -122,31 +157,22 @@ class DefaultForgeInboxTest {
 
         //when
         //then
-        assertThatThrownBy(() -> this.forgeInbox.receive(payload))
+        assertThatThrownBy(() -> this.forgeInbox.receive(payload, null))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Inbox eventType is required");
+                .hasMessage("Inbox metadata is required");
     }
 
     @Test
-    void givenNullPayload_whenSend_thenThrowException() {
-        //given
-        //when
-        //then
-        assertThatThrownBy(() -> this.forgeInbox.receive(null))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Inbox payload is required");
-    }
-
-    @Test
-    void givenLegacyEnumAggregateTypePayload_whenSend_thenPersistAggregateType() {
+    void givenLegacyEnumAggregateTypePayload_whenReceive_thenPersistAggregateType() {
         //given
         final LegacySendPayload payload = new LegacySendPayload(77L);
+        final InboxReceiveMetadata receiveMetadata = new InboxReceiveMetadata("EMAIL_VERIFY", null, null);
         final ArgumentCaptor<InboxRecord> argumentCaptor = ArgumentCaptor.forClass(InboxRecord.class);
         when(this.inboxPayloadCodec.serialize(payload))
                 .thenReturn("{\"value\":1}");
 
         //when
-        this.forgeInbox.receive(payload);
+        this.forgeInbox.receive(payload, receiveMetadata);
 
         //then
         verify(this.inboxPayloadCodec).serialize(payload);
@@ -156,18 +182,12 @@ class DefaultForgeInboxTest {
         assertThat(actual.getAggregateId()).isEqualTo(77L);
     }
 
-    private record SendPayload(String eventType,
-                               String traceId,
+    private record SendPayload(String traceId,
                                String aggregateTypeName,
                                Long userId,
                                Instant nextAttemptAt,
                                Map<String, String> headers,
                                Map<String, String> metadata) implements ForgeInboxPayload {
-
-        @Override
-        public String eventType() {
-            return this.eventType;
-        }
 
         @Override
         public String traceId() {
@@ -211,11 +231,6 @@ class DefaultForgeInboxTest {
     }
 
     private record LegacySendPayload(Long userId) implements ForgeInboxPayload {
-
-        @Override
-        public String eventType() {
-            return "EMAIL_VERIFY";
-        }
 
         @Override
         public InboxAggregateType aggregateType() {

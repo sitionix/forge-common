@@ -1,12 +1,16 @@
 package com.sitionix.forge.inbox.boot.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sitionix.forge.inbox.boot.service.SpringEnumInboxHandler;
+import com.sitionix.forge.inbox.core.model.EnumForgeInboxEventTypes;
+import com.sitionix.forge.inbox.core.model.ForgeInboxEventType;
+import com.sitionix.forge.inbox.core.model.ForgeInboxEventTypes;
+import com.sitionix.forge.inbox.core.model.InboxEvent;
 import com.sitionix.forge.inbox.core.port.ForgeInbox;
 import com.sitionix.forge.inbox.core.port.ForgeInboxEventHandler;
 import com.sitionix.forge.inbox.core.port.ForgeInboxPayload;
 import com.sitionix.forge.inbox.core.port.ForgeInboxWorker;
 import com.sitionix.forge.inbox.core.port.InboxHandler;
-import com.sitionix.forge.inbox.core.model.InboxEvent;
 import com.sitionix.forge.inbox.core.port.InboxStorage;
 import com.sitionix.forge.inbox.core.service.InboxDispatcher;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,7 +32,7 @@ class ForgeInboxAutoConfigurationTest {
     }
 
     @Test
-    void givenInboxStorageWithoutPublishers_whenContextLoads_thenCreateDispatchingChainWithEmptyPublishers() {
+    void givenInboxStorageWithoutEventTypes_whenContextLoads_thenFailContext() {
         //given
         final InboxStorage inboxStorage = mock(InboxStorage.class);
 
@@ -38,29 +42,53 @@ class ForgeInboxAutoConfigurationTest {
                 .withBean(InboxStorage.class, () -> inboxStorage)
                 .withBean(ObjectMapper.class, ObjectMapper::new)
                 .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("no ForgeInboxEventTypes bean is configured");
+                });
+    }
+
+    @Test
+    void givenInboxStorageAndEventTypeRegistry_whenContextLoads_thenCreateDispatchingChain() {
+        //given
+        final InboxStorage inboxStorage = mock(InboxStorage.class);
+        final ForgeInboxEventHandler<?> handler = new TestPayloadHandler();
+        final ForgeInboxEventTypes eventTypes = new EnumForgeInboxEventTypes<>(TestEventType.class);
+
+        //when
+        //then
+        this.contextRunner
+                .withBean(InboxStorage.class, () -> inboxStorage)
+                .withBean(ObjectMapper.class, ObjectMapper::new)
+                .withBean("testPayloadHandler", ForgeInboxEventHandler.class, () -> handler)
+                .withBean(ForgeInboxEventTypes.class, () -> eventTypes)
+                .run(context -> {
                     assertThat(context).hasSingleBean(ForgeInbox.class);
                     assertThat(context).hasSingleBean(InboxHandler.class);
+                    assertThat(context.getBean(InboxHandler.class)).isInstanceOf(SpringEnumInboxHandler.class);
                     assertThat(context).hasSingleBean(InboxDispatcher.class);
                     assertThat(context).hasSingleBean(ForgeInboxWorker.class);
                 });
     }
 
     @Test
-    void givenInboxStorageAndPublisher_whenContextLoads_thenCreateDispatchingChain() {
+    void givenDuplicateTypedHandlers_whenContextLoads_thenFailContext() {
         //given
         final InboxStorage inboxStorage = mock(InboxStorage.class);
-        final ForgeInboxEventHandler<?> publisher = new TestPublisher();
+        final ForgeInboxEventTypes eventTypes = new EnumForgeInboxEventTypes<>(TestEventType.class);
 
         //when
         //then
         this.contextRunner
                 .withBean(InboxStorage.class, () -> inboxStorage)
                 .withBean(ObjectMapper.class, ObjectMapper::new)
-                .withBean("testPublisher", ForgeInboxEventHandler.class, () -> publisher)
+                .withBean("firstTestPayloadHandler", ForgeInboxEventHandler.class, TestPayloadHandler::new)
+                .withBean("secondTestPayloadHandler", ForgeInboxEventHandler.class, TestPayloadHandler::new)
+                .withBean(ForgeInboxEventTypes.class, () -> eventTypes)
                 .run(context -> {
-                    assertThat(context).hasSingleBean(ForgeInbox.class);
-                    assertThat(context).hasSingleBean(InboxHandler.class);
-                    assertThat(context).hasSingleBean(InboxDispatcher.class);
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("expected single matching bean but found 2");
                 });
     }
 
@@ -83,7 +111,6 @@ class ForgeInboxAutoConfigurationTest {
     void givenInboxDisabled_whenContextLoads_thenSkipInboxGraph() {
         //given
         final InboxStorage inboxStorage = mock(InboxStorage.class);
-        final ForgeInboxEventHandler<?> publisher = new TestPublisher();
 
         //when
         //then
@@ -91,7 +118,6 @@ class ForgeInboxAutoConfigurationTest {
                 .withPropertyValues("forge.inbox.enabled=false")
                 .withBean(InboxStorage.class, () -> inboxStorage)
                 .withBean(ObjectMapper.class, ObjectMapper::new)
-                .withBean("testPublisher", ForgeInboxEventHandler.class, () -> publisher)
                 .run(context -> {
                     assertThat(context).doesNotHaveBean(ForgeInbox.class);
                     assertThat(context).doesNotHaveBean(InboxHandler.class);
@@ -99,12 +125,7 @@ class ForgeInboxAutoConfigurationTest {
                 });
     }
 
-    private static class TestPublisher implements ForgeInboxEventHandler<TestPayload> {
-
-        @Override
-        public Class<TestPayload> payloadClass() {
-            return TestPayload.class;
-        }
+    private static class TestPayloadHandler implements ForgeInboxEventHandler<TestPayload> {
 
         @Override
         public void handle(final InboxEvent<TestPayload> event) {
@@ -112,11 +133,37 @@ class ForgeInboxAutoConfigurationTest {
         }
     }
 
-    private record TestPayload(String value) implements ForgeInboxPayload {
+    private enum TestEventType implements ForgeInboxEventType {
+        TEST(1L, "TEST", TestPayload.class);
+
+        private final Long id;
+        private final String description;
+        private final Class<? extends ForgeInboxPayload> payloadClass;
+
+        TestEventType(final Long id,
+                      final String description,
+                      final Class<? extends ForgeInboxPayload> payloadClass) {
+            this.id = id;
+            this.description = description;
+            this.payloadClass = payloadClass;
+        }
 
         @Override
-        public String eventType() {
-            return "TEST_EVENT";
+        public Long getId() {
+            return this.id;
         }
+
+        @Override
+        public String getDescription() {
+            return this.description;
+        }
+
+        @Override
+        public Class<? extends ForgeInboxPayload> payloadClass() {
+            return this.payloadClass;
+        }
+    }
+
+    private record TestPayload(String value) implements ForgeInboxPayload {
     }
 }

@@ -3,6 +3,7 @@ package com.sitionix.forge.inbox.core.service;
 import com.sitionix.forge.inbox.core.model.InboxRecord;
 import com.sitionix.forge.inbox.core.port.ForgeInboxPayload;
 import com.sitionix.forge.inbox.core.port.ForgeInbox;
+import com.sitionix.forge.inbox.core.port.InboxReceiveMetadata;
 import com.sitionix.forge.inbox.core.port.InboxPayloadCodec;
 import com.sitionix.forge.inbox.core.port.InboxStorage;
 
@@ -24,26 +25,30 @@ public class DefaultForgeInbox<P extends ForgeInboxPayload> implements ForgeInbo
     }
 
     @Override
-    public void receive(final P payload) {
-        final String eventType = this.validateAndResolveEventType(payload);
-        final InboxRecord inboxRecord = this.inboxRecordFactory.create(payload, eventType);
+    public void receive(final P payload,
+                        final InboxReceiveMetadata metadata) {
+        this.validatePayload(payload);
+        final InboxReceiveMetadata validatedMetadata = this.validateMetadata(metadata);
+        final InboxRecord inboxRecord = this.inboxRecordFactory.create(payload, validatedMetadata);
         final String encodedPayload = this.resolvePayload(payload);
         this.storage.enqueue(this.inboxRecordFactory.withPayload(inboxRecord, encodedPayload));
     }
 
-    private String validateAndResolveEventType(final P payload) {
+    private void validatePayload(final P payload) {
         if (payload == null) {
             throw new IllegalArgumentException("Inbox payload is required");
         }
-        final String eventType = this.resolveEventType(payload);
+    }
+
+    private InboxReceiveMetadata validateMetadata(final InboxReceiveMetadata metadata) {
+        if (metadata == null) {
+            throw new IllegalArgumentException("Inbox metadata is required");
+        }
+        final String eventType = metadata.eventType();
         if (eventType == null || eventType.isBlank()) {
             throw new IllegalArgumentException("Inbox eventType is required");
         }
-        return eventType;
-    }
-
-    private String resolveEventType(final P payload) {
-        return payload.eventType();
+        return metadata;
     }
 
     private String resolvePayload(final P payload) {

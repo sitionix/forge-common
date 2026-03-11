@@ -1,14 +1,19 @@
 package com.sitionix.forge.inbox.boot.codec;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sitionix.forge.inbox.core.port.InboxPayloadCodec;
-import lombok.RequiredArgsConstructor;
-
-@RequiredArgsConstructor
 public class JacksonInboxPayloadCodec implements InboxPayloadCodec {
 
     private final ObjectMapper objectMapper;
+    private final ObjectMapper strictDeserializerObjectMapper;
+
+    public JacksonInboxPayloadCodec(final ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+        this.strictDeserializerObjectMapper = objectMapper.copy()
+                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, true);
+    }
 
     @Override
     public String serialize(final Object payload) {
@@ -34,7 +39,7 @@ public class JacksonInboxPayloadCodec implements InboxPayloadCodec {
             return payloadType.cast(payload);
         }
         try {
-            return this.objectMapper.readValue(payload, payloadType);
+            return this.strictDeserializerObjectMapper.readValue(payload, payloadType);
         } catch (final JsonProcessingException exception) {
             throw new IllegalStateException("Failed to deserialize inbox payload", exception);
         }
