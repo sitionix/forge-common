@@ -207,10 +207,21 @@ public class PostgresInboxStorage implements InboxStorage {
                                                  final Instant now,
                                                  final boolean lockEnabled,
                                                  final Duration lockLease) {
+        Objects.requireNonNull(eventStatuses, "eventStatuses is required");
+        Objects.requireNonNull(now, "now is required");
+        if (eventStatuses.isEmpty() || batchSize < 1) {
+            return List.of();
+        }
+        final Duration effectiveLockLease = lockEnabled
+                ? Objects.requireNonNull(lockLease, "lockLease is required when lockEnabled")
+                : lockLease;
+        if (lockEnabled && (effectiveLockLease.isZero() || effectiveLockLease.isNegative())) {
+            throw new IllegalArgumentException("lockLease must be greater than 0 when lockEnabled");
+        }
         final boolean filterByEventTypes = eventTypes != null && !eventTypes.isEmpty() && !eventTypes.contains("*");
         final List<Long> statusIds = eventStatuses.stream().map(InboxStatus::getId).toList();
         final Timestamp nowTimestamp = Timestamp.from(now);
-        final Timestamp lockUntil = lockEnabled ? Timestamp.from(now.plus(lockLease)) : null;
+        final Timestamp lockUntil = lockEnabled ? Timestamp.from(now.plus(effectiveLockLease)) : null;
         final String selectSql = """
                 SELECT id
                 FROM %s

@@ -34,7 +34,7 @@ public class MongoInboxStorage implements InboxStorage {
     private final MongoTemplate mongoTemplate;
 
     public MongoInboxStorage(final MongoTemplate mongoTemplate) {
-        this.mongoTemplate = mongoTemplate;
+        this.mongoTemplate = Objects.requireNonNull(mongoTemplate, "mongoTemplate is required");
     }
 
     @Override
@@ -76,10 +76,27 @@ public class MongoInboxStorage implements InboxStorage {
                                                  final Instant now,
                                                  final boolean lockEnabled,
                                                  final Duration lockLease) {
+        Objects.requireNonNull(eventStatuses, "eventStatuses is required");
+        Objects.requireNonNull(now, "now is required");
+        if (eventStatuses.isEmpty() || batchSize < 1) {
+            return List.of();
+        }
+        final Duration effectiveLockLease = lockEnabled
+                ? Objects.requireNonNull(lockLease, "lockLease is required when lockEnabled")
+                : lockLease;
+        if (lockEnabled && (effectiveLockLease.isZero() || effectiveLockLease.isNegative())) {
+            throw new IllegalArgumentException("lockLease must be greater than 0 when lockEnabled");
+        }
         final boolean filterByEventTypes = eventTypes != null && !eventTypes.isEmpty() && !eventTypes.contains("*");
         final List<String> statuses = eventStatuses.stream().map(Enum::name).toList();
         return IntStream.range(0, batchSize)
-                .mapToObj(index -> this.claimSinglePendingEvent(filterByEventTypes, eventTypes, statuses, now, lockEnabled, lockLease))
+                .mapToObj(index -> this.claimSinglePendingEvent(
+                        filterByEventTypes,
+                        eventTypes,
+                        statuses,
+                        now,
+                        lockEnabled,
+                        effectiveLockLease))
                 .takeWhile(Objects::nonNull)
                 .toList();
     }

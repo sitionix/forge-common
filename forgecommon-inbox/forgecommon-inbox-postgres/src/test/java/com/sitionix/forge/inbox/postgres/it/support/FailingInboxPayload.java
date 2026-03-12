@@ -1,4 +1,6 @@
 package com.sitionix.forge.inbox.postgres.it.support;
 
-public record FailingInboxPayload(String value) {
+import com.sitionix.forge.inbox.core.port.ForgeInboxPayload;
+
+public record FailingInboxPayload(String value) implements ForgeInboxPayload {
 }

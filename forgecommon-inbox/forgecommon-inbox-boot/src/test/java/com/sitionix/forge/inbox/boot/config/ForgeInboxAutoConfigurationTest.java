@@ -9,14 +9,17 @@ import com.sitionix.forge.inbox.core.model.ForgeInboxEventTypes;
 import com.sitionix.forge.inbox.core.model.InboxEvent;
 import com.sitionix.forge.inbox.core.port.ForgeInbox;
 import com.sitionix.forge.inbox.core.port.ForgeInboxEventHandler;
+import com.sitionix.forge.inbox.core.port.ForgeInboxPayload;
 import com.sitionix.forge.inbox.core.port.ForgeInboxWorker;
 import com.sitionix.forge.inbox.core.port.InboxHandler;
+import com.sitionix.forge.inbox.core.port.InboxPayloadCodec;
 import com.sitionix.forge.inbox.core.port.InboxStorage;
 import com.sitionix.forge.inbox.core.service.InboxDispatcher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Configuration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -29,6 +32,21 @@ class ForgeInboxAutoConfigurationTest {
     void setUp() {
         this.contextRunner = new ApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(ForgeInboxAutoConfiguration.class));
+    }
+
+    @Test
+    void givenEnableInboxAnnotation_whenContextLoads_thenCreateCoreBeansWithoutStorageModules() {
+        //given
+        final ApplicationContextRunner runner = new ApplicationContextRunner()
+                .withUserConfiguration(EnableInboxTestConfiguration.class)
+                .withBean(ObjectMapper.class, ObjectMapper::new);
+
+        //when
+        //then
+        runner.run(context -> {
+            assertThat(context).hasSingleBean(InboxStartupValidator.class);
+            assertThat(context).hasSingleBean(InboxPayloadCodec.class);
+        });
     }
 
     @Test
@@ -159,11 +177,11 @@ class ForgeInboxAutoConfigurationTest {
 
         private final Long id;
         private final String description;
-        private final Class<?> payloadClass;
+        private final Class<? extends ForgeInboxPayload> payloadClass;
 
         TestEventType(final Long id,
                       final String description,
-                      final Class<?> payloadClass) {
+                      final Class<? extends ForgeInboxPayload> payloadClass) {
             this.id = id;
             this.description = description;
             this.payloadClass = payloadClass;
@@ -180,11 +198,16 @@ class ForgeInboxAutoConfigurationTest {
         }
 
         @Override
-        public Class<?> payloadClass() {
+        public Class<? extends ForgeInboxPayload> payloadClass() {
             return this.payloadClass;
         }
     }
 
-    private record TestPayload(String value) {
+    private record TestPayload(String value) implements ForgeInboxPayload {
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    @EnableInbox
+    private static class EnableInboxTestConfiguration {
     }
 }

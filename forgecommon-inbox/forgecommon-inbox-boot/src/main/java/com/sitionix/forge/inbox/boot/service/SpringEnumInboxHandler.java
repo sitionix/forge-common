@@ -5,6 +5,7 @@ import com.sitionix.forge.inbox.core.model.ForgeInboxEventTypes;
 import com.sitionix.forge.inbox.core.model.InboxEvent;
 import com.sitionix.forge.inbox.core.model.InboxRecord;
 import com.sitionix.forge.inbox.core.port.ForgeInboxEventHandler;
+import com.sitionix.forge.inbox.core.port.ForgeInboxPayload;
 import com.sitionix.forge.inbox.core.port.InboxHandler;
 import com.sitionix.forge.inbox.core.port.InboxPayloadCodec;
 import org.springframework.beans.factory.ListableBeanFactory;
@@ -46,7 +47,7 @@ public class SpringEnumInboxHandler implements InboxHandler {
         if (binding == null) {
             throw new IllegalStateException("No ForgeInboxEventType configured for eventType: " + eventType);
         }
-        this.dispatch(record, binding);
+        this.dispatch(record, eventType, binding);
     }
 
     private Map<String, HandlerBinding> createBindings(final ForgeInboxEventTypes eventTypes,
@@ -81,7 +82,7 @@ public class SpringEnumInboxHandler implements InboxHandler {
                                           final ListableBeanFactory beanFactory,
                                           final String eventType) {
         final ForgeInboxEventType eventTypeConfig = eventTypes.byDescription(eventType);
-        final Class<?> payloadClass = Objects.requireNonNull(
+        final Class<? extends ForgeInboxPayload> payloadClass = Objects.requireNonNull(
                 eventTypeConfig.payloadClass(),
                 "payloadClass is required for eventType: " + eventTypeConfig.getDescription());
         final ForgeInboxEventHandler<?> handler = this.resolveHandler(beanFactory, payloadClass);
@@ -89,7 +90,7 @@ public class SpringEnumInboxHandler implements InboxHandler {
     }
 
     private ForgeInboxEventHandler<?> resolveHandler(final ListableBeanFactory beanFactory,
-                                                     final Class<?> payloadClass) {
+                                                     final Class<? extends ForgeInboxPayload> payloadClass) {
         final ResolvableType handlerType = ResolvableType.forClassWithGenerics(ForgeInboxEventHandler.class, payloadClass);
         final Object rawBean = beanFactory.getBeanProvider(handlerType).getObject();
         if (!(rawBean instanceof ForgeInboxEventHandler<?> handler)) {
@@ -99,8 +100,9 @@ public class SpringEnumInboxHandler implements InboxHandler {
     }
 
     @SuppressWarnings("unchecked")
-    private <P> void dispatch(final InboxRecord record,
-                              final HandlerBinding rawBinding) throws Exception {
+    private <P extends ForgeInboxPayload> void dispatch(final InboxRecord record,
+                                                        final String normalizedEventType,
+                                                        final HandlerBinding rawBinding) throws Exception {
         final Class<P> payloadClass = (Class<P>) rawBinding.payloadClass();
         final ForgeInboxEventHandler<P> handler = (ForgeInboxEventHandler<P>) rawBinding.handler();
         final P payload = this.inboxPayloadCodec.deserialize(record.getPayload(), payloadClass);
@@ -110,7 +112,7 @@ public class SpringEnumInboxHandler implements InboxHandler {
                 .payload(payload)
                 .idempotencyKey(record.getIdempotencyKey())
                 .createdAt(record.getCreatedAt())
-                .eventType(record.getEventType())
+                .eventType(normalizedEventType)
                 .build();
         handler.handle(event);
     }
@@ -124,7 +126,7 @@ public class SpringEnumInboxHandler implements InboxHandler {
     }
 
     private record HandlerBinding(
-            Class<?> payloadClass,
+            Class<? extends ForgeInboxPayload> payloadClass,
             ForgeInboxEventHandler<?> handler
     ) {
     }

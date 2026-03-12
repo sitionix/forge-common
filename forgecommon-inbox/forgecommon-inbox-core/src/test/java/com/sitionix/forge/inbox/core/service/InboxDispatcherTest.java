@@ -172,6 +172,43 @@ class InboxDispatcherTest {
     }
 
     @Test
+    void givenInterruptedException_whenDispatchPendingEvents_thenPreserveInterruptFlag() throws Exception {
+        //given
+        final InboxRecord inboxRecord = InboxRecord.builder()
+                .id("12")
+                .eventType("EMAIL_VERIFY")
+                .payload("{}")
+                .updatedAt(Instant.parse("2026-01-01T10:00:00Z"))
+                .build();
+        when(this.inboxPublisher.supportedEventTypes())
+                .thenReturn(Set.of("EMAIL_VERIFY"));
+        when(this.inboxStorage.claimPendingEvents(any(), any(), any(Integer.class), any(), any(Boolean.class), any()))
+                .thenReturn(List.of(inboxRecord));
+        doThrow(new InterruptedException("interrupted"))
+                .when(this.inboxPublisher)
+                .handle(inboxRecord);
+
+        //when
+        final InboxDispatchSummary actual = this.inboxDispatcher.dispatchPendingEvents();
+
+        //then
+        assertThat(actual.getClaimed()).isEqualTo(1);
+        assertThat(actual.getProcessed()).isEqualTo(0);
+        assertThat(actual.getFailed()).isEqualTo(1);
+        assertThat(Thread.currentThread().isInterrupted()).isTrue();
+        Thread.interrupted();
+        verify(this.inboxPublisher).supportedEventTypes();
+        verify(this.inboxStorage).claimPendingEvents(any(), any(), any(Integer.class), any(), any(Boolean.class), any());
+        verify(this.inboxPublisher).handle(inboxRecord);
+        verify(this.inboxStorage).markFailed(eq("12"),
+                eq("interrupted"),
+                eq(Duration.ofSeconds(60)),
+                eq(3),
+                eq(Instant.parse("2026-01-01T10:00:00Z")),
+                eq(Instant.parse("2026-01-01T10:00:00Z")));
+    }
+
+    @Test
     void givenInvalidPolicy_whenCreateDispatcher_thenThrowException() {
         //given
         final InboxWorkerPolicy invalidPolicy = InboxWorkerPolicy.builder()

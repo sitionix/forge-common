@@ -3,9 +3,11 @@ package com.sitionix.forge.inbox.boot.config;
 import com.sitionix.forge.inbox.core.model.InboxDomainStore;
 import com.sitionix.forge.inbox.core.model.ForgeInboxEventTypes;
 import com.sitionix.forge.inbox.core.port.InboxStorage;
+import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.ListableBeanFactory;
+import org.springframework.util.ClassUtils;
 
 import javax.sql.DataSource;
 import java.util.Objects;
@@ -71,11 +73,20 @@ public class InboxStartupValidator implements InitializingBean {
     }
 
     private boolean hasBeanOfType(final String className) {
-        try {
-            final Class<?> type = Class.forName(className, false, this.beanFactory.getClass().getClassLoader());
-            return this.beanFactory.getBeanNamesForType(type).length > 0;
-        } catch (final ClassNotFoundException ignored) {
+        final ClassLoader classLoader = this.resolveClassLoader();
+        if (!ClassUtils.isPresent(className, classLoader)) {
             return false;
         }
+        final Class<?> type = ClassUtils.resolveClassName(className, classLoader);
+        return this.beanFactory.getBeanNamesForType(type).length > 0;
+    }
+
+    private ClassLoader resolveClassLoader() {
+        if (this.beanFactory instanceof ConfigurableBeanFactory configurableBeanFactory
+                && configurableBeanFactory.getBeanClassLoader() != null) {
+            return configurableBeanFactory.getBeanClassLoader();
+        }
+        final ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+        return contextClassLoader != null ? contextClassLoader : InboxStartupValidator.class.getClassLoader();
     }
 }

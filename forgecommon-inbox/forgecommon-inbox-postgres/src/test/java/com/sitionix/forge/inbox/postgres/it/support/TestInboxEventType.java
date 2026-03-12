@@ -1,6 +1,7 @@
 package com.sitionix.forge.inbox.postgres.it.support;
 
 import com.sitionix.forge.inbox.core.model.ForgeInboxEventType;
+import com.sitionix.forge.inbox.core.port.ForgeInboxPayload;
 
 public enum TestInboxEventType implements ForgeInboxEventType {
     EMAIL_VERIFY(1L, "EMAIL_VERIFY", SuccessInboxPayload.class),
@@ -8,11 +9,11 @@ public enum TestInboxEventType implements ForgeInboxEventType {
 
     private final Long id;
     private final String description;
-    private final Class<?> payloadClass;
+    private final Class<? extends ForgeInboxPayload> payloadClass;
 
     TestInboxEventType(final Long id,
                        final String description,
-                       final Class<?> payloadClass) {
+                       final Class<? extends ForgeInboxPayload> payloadClass) {
         this.id = id;
         this.description = description;
         this.payloadClass = payloadClass;
@@ -29,7 +30,7 @@ public enum TestInboxEventType implements ForgeInboxEventType {
     }
 
     @Override
-    public Class<?> payloadClass() {
+    public Class<? extends ForgeInboxPayload> payloadClass() {
         return this.payloadClass;
     }
 }

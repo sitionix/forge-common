@@ -72,6 +72,9 @@ public class InboxDispatcher {
             this.storage.markProcessed(event.getId(), now, event.getUpdatedAt());
             return true;
         } catch (final Exception exception) {
+            if (exception instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             this.storage.markFailed(
                     event.getId(),
                     this.formatErrorMessage(exception),

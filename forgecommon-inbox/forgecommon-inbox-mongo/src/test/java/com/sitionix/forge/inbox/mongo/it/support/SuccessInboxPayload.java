@@ -1,4 +1,6 @@
 package com.sitionix.forge.inbox.mongo.it.support;
 
-public record SuccessInboxPayload(String value) {
+import com.sitionix.forge.inbox.core.port.ForgeInboxPayload;
+
+public record SuccessInboxPayload(String value) implements ForgeInboxPayload {
 }

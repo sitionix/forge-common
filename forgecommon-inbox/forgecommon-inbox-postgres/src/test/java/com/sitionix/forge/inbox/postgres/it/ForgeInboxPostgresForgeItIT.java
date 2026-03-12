@@ -3,6 +3,7 @@ package com.sitionix.forge.inbox.postgres.it;
 import com.sitionix.forge.inbox.core.model.InboxDispatchSummary;
 import com.sitionix.forge.inbox.core.model.InboxStatus;
 import com.sitionix.forge.inbox.core.port.ForgeInbox;
+import com.sitionix.forge.inbox.core.port.ForgeInboxPayload;
 import com.sitionix.forge.inbox.core.port.ForgeInboxWorker;
 import com.sitionix.forge.inbox.core.port.InboxReceiveMetadata;
 import com.sitionix.forge.inbox.postgres.entity.ForgeInboxEventEntity;
@@ -43,7 +44,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ForgeInboxPostgresForgeItIT {
 
     @Autowired
-    private ForgeInbox<Object> forgeInbox;
+    private ForgeInbox<ForgeInboxPayload> forgeInbox;
 
     @Autowired
     private ForgeInboxWorker forgeInboxWorker;

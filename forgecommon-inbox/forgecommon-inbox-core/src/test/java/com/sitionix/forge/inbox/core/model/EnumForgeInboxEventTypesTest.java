@@ -1,5 +1,6 @@
 package com.sitionix.forge.inbox.core.model;
 
+import com.sitionix.forge.inbox.core.port.ForgeInboxPayload;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -50,11 +51,11 @@ class EnumForgeInboxEventTypesTest {
 
         private final Long id;
         private final String description;
-        private final Class<?> payloadClass;
+        private final Class<? extends ForgeInboxPayload> payloadClass;
 
         TestEventType(final Long id,
                       final String description,
-                      final Class<?> payloadClass) {
+                      final Class<? extends ForgeInboxPayload> payloadClass) {
             this.id = id;
             this.description = description;
             this.payloadClass = payloadClass;
@@ -71,11 +72,11 @@ class EnumForgeInboxEventTypesTest {
         }
 
         @Override
-        public Class<?> payloadClass() {
+        public Class<? extends ForgeInboxPayload> payloadClass() {
             return this.payloadClass;
         }
     }
 
-    private record TestPayload(String value) {
+    private record TestPayload(String value) implements ForgeInboxPayload {
     }
 }

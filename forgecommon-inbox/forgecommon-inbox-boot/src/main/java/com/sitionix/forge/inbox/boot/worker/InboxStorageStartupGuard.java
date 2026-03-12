@@ -9,6 +9,8 @@ final class InboxStorageStartupGuard {
     private static final String UNDEFINED_TABLE_SQL_STATE = "42P01";
     private static final String MYSQL_TABLE_NOT_FOUND = "42S02";
     private static final String SQLITE_TABLE_NOT_FOUND = "no such table";
+    private static final String INBOX_EVENTS_TABLE = "forge_inbox_events";
+    private static final String INBOX_AGGREGATE_TYPES_TABLE = "forge_inbox_aggregate_types";
 
     private InboxStorageStartupGuard() {
     }
@@ -22,7 +24,8 @@ final class InboxStorageStartupGuard {
             final String message = current.getMessage();
             if (message != null) {
                 final String normalized = message.toLowerCase();
-                final boolean mentionsInboxTable = normalized.contains("forge_inbox_events");
+                final boolean mentionsInboxTable = normalized.contains(INBOX_EVENTS_TABLE)
+                        || normalized.contains(INBOX_AGGREGATE_TYPES_TABLE);
                 final boolean missingRelation = normalized.contains("does not exist")
                         || normalized.contains("unknown table")
                         || normalized.contains(SQLITE_TABLE_NOT_FOUND);

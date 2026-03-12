@@ -7,7 +7,16 @@ import java.util.Set;
  */
 public interface ForgeInboxEventTypes {
 
+    /**
+     * Resolves event type configuration by transport-level description.
+     *
+     * @param description transport event type value
+     * @return matching event type configuration
+     */
     ForgeInboxEventType byDescription(String description);
 
+    /**
+     * @return all event types supported by the service configuration
+     */
     Set<String> supportedEventTypes();
 }

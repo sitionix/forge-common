@@ -1,6 +1,7 @@
 package com.sitionix.forge.inbox.core.service;
 
 import com.sitionix.forge.inbox.core.model.InboxRecord;
+import com.sitionix.forge.inbox.core.port.ForgeInboxPayload;
 import com.sitionix.forge.inbox.core.port.InboxPayloadCodec;
 import com.sitionix.forge.inbox.core.port.InboxReceiveMetadata;
 import com.sitionix.forge.inbox.core.port.InboxStorage;
@@ -32,7 +33,7 @@ class DefaultForgeInboxTest {
     @Mock
     private InboxPayloadCodec inboxPayloadCodec;
 
-    private DefaultForgeInbox<Object> forgeInbox;
+    private DefaultForgeInbox<SendPayload> forgeInbox;
 
     @BeforeEach
     void setUp() {
@@ -157,6 +158,6 @@ class DefaultForgeInboxTest {
                 .hasMessage("Inbox metadata is required");
     }
 
-    private record SendPayload(String value) {
+    private record SendPayload(String value) implements ForgeInboxPayload {
     }
 }

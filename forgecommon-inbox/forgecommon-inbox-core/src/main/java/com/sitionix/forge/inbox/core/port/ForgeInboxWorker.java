@@ -8,5 +8,10 @@ import com.sitionix.forge.inbox.core.model.InboxDispatchSummary;
 @FunctionalInterface
 public interface ForgeInboxWorker {
 
+    /**
+     * Runs one dispatch cycle.
+     *
+     * @return dispatch summary for this cycle
+     */
     InboxDispatchSummary dispatchPendingEvents();
 }

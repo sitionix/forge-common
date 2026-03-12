@@ -51,6 +51,19 @@ class InboxStorageStartupGuardTest {
     }
 
     @Test
+    void givenForgeInboxAggregateTypesRelationMissingMessage_whenIsInboxSchemaMissing_thenReturnTrue() {
+        //given
+        final DataAccessResourceFailureException exception = new DataAccessResourceFailureException(
+                "relation \"forge_inbox_aggregate_types\" does not exist");
+
+        //when
+        final boolean actual = InboxStorageStartupGuard.isInboxSchemaMissing(exception);
+
+        //then
+        assertThat(actual).isTrue();
+    }
+
+    @Test
     void givenMissingTableSqlStateWithoutInboxTableInMessage_whenIsInboxSchemaMissing_thenReturnTrue() {
         //given
         final DataAccessResourceFailureException exception = new DataAccessResourceFailureException(

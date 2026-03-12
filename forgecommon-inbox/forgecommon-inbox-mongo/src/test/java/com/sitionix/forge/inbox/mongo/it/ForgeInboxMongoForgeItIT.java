@@ -2,6 +2,7 @@ package com.sitionix.forge.inbox.mongo.it;
 
 import com.sitionix.forge.inbox.core.model.InboxDispatchSummary;
 import com.sitionix.forge.inbox.core.port.ForgeInbox;
+import com.sitionix.forge.inbox.core.port.ForgeInboxPayload;
 import com.sitionix.forge.inbox.core.port.ForgeInboxWorker;
 import com.sitionix.forge.inbox.core.port.InboxReceiveMetadata;
 import com.sitionix.forge.inbox.mongo.it.entity.ForgeInboxMongoEventEntity;
@@ -42,7 +43,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ForgeInboxMongoForgeItIT {
 
     @Autowired
-    private ForgeInbox<Object> forgeInbox;
+    private ForgeInbox<ForgeInboxPayload> forgeInbox;
 
     @Autowired
     private ForgeInboxWorker forgeInboxWorker;
