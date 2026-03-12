@@ -13,12 +13,13 @@
 
     <groupId>com.sitionix.forge</groupId>
     <artifactId>forge-common</artifactId>
-    <version>0.0.6</version>
+    <version>0.0.7</version>
     <packaging>pom</packaging>
     <name>forge-common</name>
 
     <modules>
         <module>forgecommon-outbox</module>
+        <module>forgecommon-inbox</module>
     </modules>
 
     <properties>
