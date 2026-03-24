@@ -8,9 +8,33 @@ package com.sitionix.forge.outbox.core.port;
 public interface ForgeOutbox<P extends ForgeOutboxPayload> {
 
     /**
-     * Stores payload as an outbox record.
+     * Backward-compatible entry point that derives outbox metadata from payload.
+     * New code should prefer {@link #send(ForgeOutboxPayload, OutboxSendMetadata)}.
      *
      * @param payload payload to persist
      */
-    void send(P payload);
+    default void send(final P payload) {
+        if (payload == null) {
+            send(null, null);
+            return;
+        }
+        send(payload, new OutboxSendMetadata(
+                payload.eventType(),
+                payload.traceId(),
+                payload.headers(),
+                payload.metadata(),
+                payload.aggregateTypeValue(),
+                payload.aggregateId(),
+                payload.initiatorType(),
+                payload.initiatorId(),
+                payload.nextAttemptAt()));
+    }
+
+    /**
+     * Stores payload as an outbox record.
+     *
+     * @param payload payload to persist
+     * @param metadata outbound metadata used for outbox envelope fields
+     */
+    void send(P payload, OutboxSendMetadata metadata);
 }

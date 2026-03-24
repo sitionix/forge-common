@@ -1,9 +1,9 @@
 package com.sitionix.forge.outbox.core.service;
 
-import com.sitionix.forge.outbox.core.model.OutboxAggregateType;
 import com.sitionix.forge.outbox.core.model.OutboxRecord;
 import com.sitionix.forge.outbox.core.port.ForgeOutboxPayload;
 import com.sitionix.forge.outbox.core.port.OutboxPayloadCodec;
+import com.sitionix.forge.outbox.core.port.OutboxSendMetadata;
 import com.sitionix.forge.outbox.core.port.OutboxStorage;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,13 +49,76 @@ class DefaultForgeOutboxTest {
     @Test
     void givenPayloadWithAllOutboxFields_whenSend_thenPersistPendingRecord() {
         //given
-        final SendPayload payload = new SendPayload("EMAIL_VERIFY",
+        final SendPayload payload = new SendPayload("value-1");
+        final OutboxSendMetadata metadata = new OutboxSendMetadata("EMAIL_VERIFY",
                 "trace-1",
+                Map.of("header-1", "value-1"),
+                Map.of("meta-1", "value-1"),
                 "SITE",
                 10L,
-                Instant.parse("2026-01-01T10:01:00Z"),
-                Map.of("header-1", "value-1"),
-                Map.of("meta-1", "value-1"));
+                "SYSTEM",
+                "1",
+                Instant.parse("2026-01-01T10:01:00Z"));
+        final ArgumentCaptor<OutboxRecord> argumentCaptor = ArgumentCaptor.forClass(OutboxRecord.class);
+        when(this.outboxPayloadCodec.serialize(payload))
+                .thenReturn("{\"value\":1}");
+
+        //when
+        this.forgeOutbox.send(payload, metadata);
+
+        //then
+        verify(this.outboxPayloadCodec).serialize(payload);
+        verify(this.outboxStorage).enqueue(argumentCaptor.capture());
+        final OutboxRecord actual = argumentCaptor.getValue();
+        assertThat(actual.getEventType()).isEqualTo("EMAIL_VERIFY");
+        assertThat(actual.getPayload()).isEqualTo("{\"value\":1}");
+        assertThat(actual.getHeaders()).isEqualTo(Map.of("header-1", "value-1"));
+        assertThat(actual.getMetadata()).isEqualTo(Map.of("meta-1", "value-1"));
+        assertThat(actual.getTraceId()).isEqualTo("trace-1");
+        assertThat(actual.getAggregateType()).isEqualTo("SITE");
+        assertThat(actual.getAggregateId()).isEqualTo(10L);
+        assertThat(actual.getInitiatorType()).isEqualTo("SYSTEM");
+        assertThat(actual.getInitiatorId()).isEqualTo("1");
+        assertThat(actual.getNextAttemptAt()).isEqualTo(Instant.parse("2026-01-01T10:01:00Z"));
+    }
+
+    @Test
+    void givenPayloadWithoutOptionalFields_whenSend_thenApplyDefaults() {
+        //given
+        final SendPayload payload = new SendPayload("value-1");
+        final OutboxSendMetadata metadata = new OutboxSendMetadata("EMAIL_VERIFY",
+                null,
+                null,
+                null,
+                "   ",
+                null,
+                "SYSTEM",
+                "1",
+                null);
+        final ArgumentCaptor<OutboxRecord> argumentCaptor = ArgumentCaptor.forClass(OutboxRecord.class);
+        when(this.outboxPayloadCodec.serialize(payload))
+                .thenReturn("{\"value\":1}");
+
+        //when
+        this.forgeOutbox.send(payload, metadata);
+
+        //then
+        verify(this.outboxPayloadCodec).serialize(payload);
+        verify(this.outboxStorage).enqueue(argumentCaptor.capture());
+        final OutboxRecord actual = argumentCaptor.getValue();
+        assertThat(actual.getAggregateType()).isNull();
+        assertThat(actual.getAggregateId()).isNull();
+        assertThat(actual.getInitiatorType()).isEqualTo("SYSTEM");
+        assertThat(actual.getInitiatorId()).isEqualTo("1");
+        assertThat(actual.getHeaders()).isEqualTo(Map.of());
+        assertThat(actual.getMetadata()).isEqualTo(Map.of());
+        assertThat(actual.getNextAttemptAt()).isEqualTo(Instant.parse("2026-01-01T10:00:00Z"));
+    }
+
+    @Test
+    void givenLegacyPayloadMetadata_whenSendWithoutExplicitMetadata_thenPersistPendingRecord() {
+        //given
+        final LegacyPayload payload = new LegacyPayload();
         final ArgumentCaptor<OutboxRecord> argumentCaptor = ArgumentCaptor.forClass(OutboxRecord.class);
         when(this.outboxPayloadCodec.serialize(payload))
                 .thenReturn("{\"value\":1}");
@@ -80,49 +143,14 @@ class DefaultForgeOutboxTest {
     }
 
     @Test
-    void givenPayloadWithoutOptionalFields_whenSend_thenApplyDefaults() {
-        //given
-        final SendPayload payload = new SendPayload("EMAIL_VERIFY",
-                null,
-                "   ",
-                null,
-                null,
-                null,
-                null);
-        final ArgumentCaptor<OutboxRecord> argumentCaptor = ArgumentCaptor.forClass(OutboxRecord.class);
-        when(this.outboxPayloadCodec.serialize(payload))
-                .thenReturn("{\"value\":1}");
-
-        //when
-        this.forgeOutbox.send(payload);
-
-        //then
-        verify(this.outboxPayloadCodec).serialize(payload);
-        verify(this.outboxStorage).enqueue(argumentCaptor.capture());
-        final OutboxRecord actual = argumentCaptor.getValue();
-        assertThat(actual.getAggregateType()).isNull();
-        assertThat(actual.getAggregateId()).isNull();
-        assertThat(actual.getInitiatorType()).isEqualTo("SYSTEM");
-        assertThat(actual.getInitiatorId()).isEqualTo("1");
-        assertThat(actual.getHeaders()).isEqualTo(Map.of());
-        assertThat(actual.getMetadata()).isEqualTo(Map.of());
-        assertThat(actual.getNextAttemptAt()).isEqualTo(Instant.parse("2026-01-01T10:00:00Z"));
-    }
-
-    @Test
     void givenMissingEventTypePayload_whenSend_thenThrowException() {
         //given
-        final SendPayload payload = new SendPayload(" ",
-                null,
-                null,
-                null,
-                null,
-                null,
-                null);
+        final SendPayload payload = new SendPayload("value-1");
+        final OutboxSendMetadata metadata = new OutboxSendMetadata(" ");
 
         //when
         //then
-        assertThatThrownBy(() -> this.forgeOutbox.send(payload))
+        assertThatThrownBy(() -> this.forgeOutbox.send(payload, metadata))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Outbox eventType is required");
     }
@@ -132,56 +160,56 @@ class DefaultForgeOutboxTest {
         //given
         //when
         //then
-        assertThatThrownBy(() -> this.forgeOutbox.send(null))
+        assertThatThrownBy(() -> this.forgeOutbox.send(null, new OutboxSendMetadata("EMAIL_VERIFY")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Outbox payload is required");
     }
 
     @Test
-    void givenLegacyEnumAggregateTypePayload_whenSend_thenPersistAggregateType() {
+    void givenNullMetadata_whenSend_thenThrowException() {
         //given
-        final LegacySendPayload payload = new LegacySendPayload(77L);
-        final ArgumentCaptor<OutboxRecord> argumentCaptor = ArgumentCaptor.forClass(OutboxRecord.class);
-        when(this.outboxPayloadCodec.serialize(payload))
-                .thenReturn("{\"value\":1}");
+        final SendPayload payload = new SendPayload("value-1");
 
         //when
-        this.forgeOutbox.send(payload);
-
         //then
-        verify(this.outboxPayloadCodec).serialize(payload);
-        verify(this.outboxStorage).enqueue(argumentCaptor.capture());
-        final OutboxRecord actual = argumentCaptor.getValue();
-        assertThat(actual.getAggregateType()).isEqualTo("USER");
-        assertThat(actual.getAggregateId()).isEqualTo(77L);
+        assertThatThrownBy(() -> this.forgeOutbox.send(payload, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Outbox metadata is required");
     }
 
-    private record SendPayload(String eventType,
-                               String traceId,
-                               String aggregateTypeName,
-                               Long userId,
-                               Instant nextAttemptAt,
-                               Map<String, String> headers,
-                               Map<String, String> metadata) implements ForgeOutboxPayload {
+    private record SendPayload(String value) implements ForgeOutboxPayload {
+    }
+
+    private static final class LegacyPayload implements ForgeOutboxPayload {
 
         @Override
         public String eventType() {
-            return this.eventType;
+            return "EMAIL_VERIFY";
+        }
+
+        @Override
+        public Map<String, String> headers() {
+            return Map.of("header-1", "value-1");
+        }
+
+        @Override
+        public Map<String, String> metadata() {
+            return Map.of("meta-1", "value-1");
         }
 
         @Override
         public String traceId() {
-            return this.traceId;
+            return "trace-1";
         }
 
         @Override
         public String aggregateTypeValue() {
-            return this.aggregateTypeName;
+            return "SITE";
         }
 
         @Override
         public Long aggregateId() {
-            return this.userId;
+            return 10L;
         }
 
         @Override
@@ -196,35 +224,7 @@ class DefaultForgeOutboxTest {
 
         @Override
         public Instant nextAttemptAt() {
-            return this.nextAttemptAt;
-        }
-
-        @Override
-        public Map<String, String> headers() {
-            return this.headers;
-        }
-
-        @Override
-        public Map<String, String> metadata() {
-            return this.metadata;
-        }
-    }
-
-    private record LegacySendPayload(Long userId) implements ForgeOutboxPayload {
-
-        @Override
-        public String eventType() {
-            return "EMAIL_VERIFY";
-        }
-
-        @Override
-        public OutboxAggregateType aggregateType() {
-            return OutboxAggregateType.USER;
-        }
-
-        @Override
-        public Long aggregateId() {
-            return this.userId;
+            return Instant.parse("2026-01-01T10:01:00Z");
         }
     }
 }
