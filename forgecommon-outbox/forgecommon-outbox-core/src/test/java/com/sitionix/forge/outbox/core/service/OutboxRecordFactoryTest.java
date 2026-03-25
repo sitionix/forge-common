@@ -1,9 +1,8 @@
 package com.sitionix.forge.outbox.core.service;
 
-import com.sitionix.forge.outbox.core.model.OutboxAggregateType;
 import com.sitionix.forge.outbox.core.model.OutboxRecord;
 import com.sitionix.forge.outbox.core.model.OutboxStatus;
-import com.sitionix.forge.outbox.core.port.ForgeOutboxPayload;
+import com.sitionix.forge.outbox.core.port.OutboxSendMetadata;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -11,8 +10,10 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class OutboxRecordFactoryTest {
 
@@ -25,24 +26,28 @@ class OutboxRecordFactoryTest {
     }
 
     @Test
-    void givenPayloadWithOutboxData_whenCreate_thenBuildPendingRecord() {
+    void givenMetadataWithOutboxData_whenCreate_thenBuildPendingRecord() {
         //given
-        final TestPayload payload = new TestPayload(
+        final UUID idempotencyId = UUID.fromString("11111111-1111-1111-1111-111111111111");
+        final OutboxSendMetadata metadata = new OutboxSendMetadata(
+                "EMAIL_VERIFY",
+                idempotencyId,
                 "trace-1",
-                "SITE",
-                10L,
-                Instant.parse("2026-01-01T10:01:00Z"),
                 Map.of("header-1", "value-1"),
                 Map.of("meta-1", "value-1"),
+                "SITE",
+                10L,
                 "SYSTEM",
-                "1");
+                "1",
+                Instant.parse("2026-01-01T10:01:00Z"));
 
         //when
-        final OutboxRecord actual = this.outboxRecordFactory.create(payload, "EMAIL_VERIFY");
+        final OutboxRecord actual = this.outboxRecordFactory.create(metadata, "{\"value\":1}");
 
         //then
         assertThat(actual.getEventType()).isEqualTo("EMAIL_VERIFY");
-        assertThat(actual.getPayload()).isNull();
+        assertThat(actual.getPayload()).isEqualTo("{\"value\":1}");
+        assertThat(actual.getIdempotencyId()).isEqualTo(idempotencyId);
         assertThat(actual.getHeaders()).isEqualTo(Map.of("header-1", "value-1"));
         assertThat(actual.getMetadata()).isEqualTo(Map.of("meta-1", "value-1"));
         assertThat(actual.getTraceId()).isEqualTo("trace-1");
@@ -58,24 +63,27 @@ class OutboxRecordFactoryTest {
     }
 
     @Test
-    void givenPayloadWithoutOptionalData_whenCreate_thenApplyDefaults() {
+    void givenMetadataWithoutOptionalData_whenCreate_thenApplyDefaults() {
         //given
-        final TestPayload payload = new TestPayload(
+        final OutboxSendMetadata metadata = new OutboxSendMetadata(
+                "EMAIL_VERIFY",
+                null,
+                null,
+                null,
                 null,
                 "   ",
                 null,
-                null,
-                null,
-                null,
                 "SYSTEM",
-                "1");
+                "1",
+                null);
 
         //when
-        final OutboxRecord actual = this.outboxRecordFactory.create(payload, "EMAIL_VERIFY");
+        final OutboxRecord actual = this.outboxRecordFactory.create(metadata, "{\"value\":1}");
 
         //then
         assertThat(actual.getAggregateType()).isNull();
         assertThat(actual.getAggregateId()).isNull();
+        assertThat(actual.getIdempotencyId()).isNotNull();
         assertThat(actual.getInitiatorType()).isEqualTo("SYSTEM");
         assertThat(actual.getInitiatorId()).isEqualTo("1");
         assertThat(actual.getHeaders()).isEqualTo(Map.of());
@@ -84,107 +92,13 @@ class OutboxRecordFactoryTest {
     }
 
     @Test
-    void givenLegacyEnumAggregateType_whenCreate_thenBuildRecordWithAggregateTypeValue() {
+    void givenEncodedPayloadMissing_whenCreate_thenThrowIllegalArgumentException() {
         //given
-        final LegacyPayload payload = new LegacyPayload(100L);
-
-        //when
-        final OutboxRecord actual = this.outboxRecordFactory.create(payload, "EMAIL_VERIFY");
+        final OutboxSendMetadata metadata = new OutboxSendMetadata("EMAIL_VERIFY");
 
         //then
-        assertThat(actual.getAggregateType()).isEqualTo("USER");
-        assertThat(actual.getAggregateId()).isEqualTo(100L);
-    }
-
-    @Test
-    void givenOutboxRecord_whenWithPayload_thenReturnUpdatedCopy() {
-        //given
-        final OutboxRecord source = OutboxRecord.builder()
-                .eventType("EMAIL_VERIFY")
-                .payload(null)
-                .createdAt(Instant.parse("2026-01-01T10:00:00Z"))
-                .updatedAt(Instant.parse("2026-01-01T10:00:00Z"))
-                .build();
-
-        //when
-        final OutboxRecord actual = this.outboxRecordFactory.withPayload(source, "{\"value\":1}");
-
-        //then
-        assertThat(actual.getPayload()).isEqualTo("{\"value\":1}");
-        assertThat(source.getPayload()).isNull();
-        assertThat(actual.getEventType()).isEqualTo("EMAIL_VERIFY");
-    }
-
-    private record TestPayload(String traceId,
-                               String aggregateTypeName,
-                               Long userId,
-                               Instant nextAttemptAt,
-                               Map<String, String> headers,
-                               Map<String, String> metadata,
-                               String initiatorType,
-                               String initiatorId) implements ForgeOutboxPayload {
-
-        @Override
-        public String eventType() {
-            return "EMAIL_VERIFY";
-        }
-
-        @Override
-        public String traceId() {
-            return this.traceId;
-        }
-
-        @Override
-        public String aggregateTypeValue() {
-            return this.aggregateTypeName;
-        }
-
-        @Override
-        public Long aggregateId() {
-            return this.userId;
-        }
-
-        @Override
-        public String initiatorType() {
-            return this.initiatorType;
-        }
-
-        @Override
-        public String initiatorId() {
-            return this.initiatorId;
-        }
-
-        @Override
-        public Instant nextAttemptAt() {
-            return this.nextAttemptAt;
-        }
-
-        @Override
-        public Map<String, String> headers() {
-            return this.headers;
-        }
-
-        @Override
-        public Map<String, String> metadata() {
-            return this.metadata;
-        }
-    }
-
-    private record LegacyPayload(Long userId) implements ForgeOutboxPayload {
-
-        @Override
-        public String eventType() {
-            return "EMAIL_VERIFY";
-        }
-
-        @Override
-        public OutboxAggregateType aggregateType() {
-            return OutboxAggregateType.USER;
-        }
-
-        @Override
-        public Long aggregateId() {
-            return this.userId;
-        }
+        assertThatThrownBy(() -> this.outboxRecordFactory.create(metadata, null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("encodedPayload is required");
     }
 }

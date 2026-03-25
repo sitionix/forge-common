@@ -1,5 +1,6 @@
 package com.sitionix.forge.outbox.postgres.storage;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sitionix.forge.outbox.core.model.OutboxRecord;
 import com.sitionix.forge.outbox.core.model.OutboxStatus;
 import org.flywaydb.core.Flyway;
@@ -22,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TimeZone;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -57,7 +59,7 @@ class PostgresOutboxStorageIT {
                 .migrate();
 
         jdbcTemplate = new JdbcTemplate(dataSource);
-        postgresOutboxStorage = new PostgresOutboxStorage(new NamedParameterJdbcTemplate(dataSource));
+        postgresOutboxStorage = new PostgresOutboxStorage(new NamedParameterJdbcTemplate(dataSource), new ObjectMapper());
     }
 
     @AfterAll
@@ -84,6 +86,7 @@ class PostgresOutboxStorageIT {
         final OutboxRecord outboxRecord = OutboxRecord.builder()
                 .eventType("EMAIL_VERIFY")
                 .payload("{\"value\":1}")
+                .idempotencyId(UUID.fromString("11111111-1111-1111-1111-111111111111"))
                 .headers(Map.of("h", "1"))
                 .metadata(Map.of("m", "1"))
                 .traceId("trace-1")
@@ -116,12 +119,22 @@ class PostgresOutboxStorageIT {
         //then
         assertThat(claimed).hasSize(1);
         assertThat(claimed.getFirst().getEventType()).isEqualTo("EMAIL_VERIFY");
+        assertThat(claimed.getFirst().getIdempotencyId()).isEqualTo(UUID.fromString("11111111-1111-1111-1111-111111111111"));
+        assertThat(claimed.getFirst().getHeaders()).isEqualTo(Map.of("h", "1"));
+        assertThat(claimed.getFirst().getMetadata()).isEqualTo(Map.of("m", "1"));
+        assertThat(claimed.getFirst().getInitiatorType()).isEqualTo("SYSTEM");
+        assertThat(claimed.getFirst().getInitiatorId()).isEqualTo("100");
 
         final Long statusId = jdbcTemplate.queryForObject(
                 "SELECT status_id FROM forge_outbox_events WHERE id = ?",
                 Long.class,
                 Long.valueOf(claimed.getFirst().getId()));
         assertThat(statusId).isEqualTo(OutboxStatus.SENT.getId());
+        final UUID storedIdempotencyId = jdbcTemplate.queryForObject(
+                "SELECT idempotency_id FROM forge_outbox_events WHERE id = ?",
+                UUID.class,
+                Long.valueOf(claimed.getFirst().getId()));
+        assertThat(storedIdempotencyId).isEqualTo(UUID.fromString("11111111-1111-1111-1111-111111111111"));
     }
 
     @Test

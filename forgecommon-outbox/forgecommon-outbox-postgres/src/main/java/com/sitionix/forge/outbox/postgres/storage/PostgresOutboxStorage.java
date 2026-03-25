@@ -1,5 +1,8 @@
 package com.sitionix.forge.outbox.postgres.storage;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sitionix.forge.outbox.core.model.OutboxRecord;
 import com.sitionix.forge.outbox.core.model.OutboxStatus;
 import com.sitionix.forge.outbox.core.port.OutboxStorage;
@@ -12,17 +15,27 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 public class PostgresOutboxStorage implements OutboxStorage {
 
     private static final String TABLE_NAME = "forge_outbox_events";
     private static final String AGGREGATE_TYPE_TABLE = "forge_outbox_aggregate_types";
+    private static final TypeReference<Map<String, String>> STRING_MAP_TYPE = new TypeReference<>() {
+    };
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
 
     public PostgresOutboxStorage(final NamedParameterJdbcTemplate jdbcTemplate) {
-        this.jdbcTemplate = jdbcTemplate;
+        this(jdbcTemplate, new ObjectMapper());
+    }
+
+    public PostgresOutboxStorage(final NamedParameterJdbcTemplate jdbcTemplate,
+                                 final ObjectMapper objectMapper) {
+        this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate is required");
+        this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper is required");
     }
 
     @Override
@@ -34,9 +47,14 @@ public class PostgresOutboxStorage implements OutboxStorage {
                 INSERT INTO %s (
                     event_type,
                     payload,
+                    idempotency_id,
+                    headers,
+                    metadata,
                     trace_id,
                     aggregate_type_id,
                     aggregate_id,
+                    initiator_type,
+                    initiator_id,
                     status_id,
                     retry_count,
                     next_retry_at,
@@ -47,9 +65,14 @@ public class PostgresOutboxStorage implements OutboxStorage {
                 ) VALUES (
                     :eventType,
                     :payload,
+                    CAST(:idempotencyId AS UUID),
+                    CAST(:headers AS jsonb),
+                    CAST(:metadata AS jsonb),
                     :traceId,
                     :aggregateTypeId,
                     :aggregateId,
+                    :initiatorType,
+                    :initiatorId,
                     :statusId,
                     :retryCount,
                     :nextRetryAt,
@@ -64,9 +87,14 @@ public class PostgresOutboxStorage implements OutboxStorage {
         final MapSqlParameterSource parameters = new MapSqlParameterSource()
                 .addValue("eventType", record.getEventType())
                 .addValue("payload", record.getPayload())
+                .addValue("idempotencyId", record.getIdempotencyId() == null ? null : record.getIdempotencyId().toString())
+                .addValue("headers", this.writeMap(record.getHeaders()))
+                .addValue("metadata", this.writeMap(record.getMetadata()))
                 .addValue("traceId", record.getTraceId())
                 .addValue("aggregateTypeId", aggregateTypeId)
                 .addValue("aggregateId", record.getAggregateId())
+                .addValue("initiatorType", record.getInitiatorType())
+                .addValue("initiatorId", record.getInitiatorId())
                 .addValue("statusId", pendingStatus.getId())
                 .addValue("retryCount", record.getAttempts())
                 .addValue("nextRetryAt", Timestamp.from(record.getNextAttemptAt()))
@@ -141,9 +169,14 @@ public class PostgresOutboxStorage implements OutboxStorage {
                 SELECT event.id,
                        event.event_type,
                        event.payload,
+                       event.idempotency_id,
+                       event.headers,
+                       event.metadata,
                        event.trace_id,
                        aggregate_type.description AS aggregate_type,
                        event.aggregate_id,
+                       event.initiator_type,
+                       event.initiator_id,
                        event.status_id,
                        event.retry_count,
                        event.next_retry_at,
@@ -167,13 +200,14 @@ public class PostgresOutboxStorage implements OutboxStorage {
                             .id(String.valueOf(resultSet.getLong("id")))
                             .eventType(resultSet.getString("event_type"))
                             .payload(resultSet.getString("payload"))
-                            .headers(Map.of())
-                            .metadata(Map.of())
+                            .idempotencyId(resultSet.getObject("idempotency_id", java.util.UUID.class))
+                            .headers(this.readMap(resultSet.getString("headers")))
+                            .metadata(this.readMap(resultSet.getString("metadata")))
                             .traceId(resultSet.getString("trace_id"))
                             .aggregateType(resultSet.getString("aggregate_type"))
                             .aggregateId(resultSet.getObject("aggregate_id", Long.class))
-                            .initiatorType(null)
-                            .initiatorId(null)
+                            .initiatorType(resultSet.getString("initiator_type"))
+                            .initiatorId(resultSet.getString("initiator_id"))
                             .status(OutboxStatus.fromId(resultSet.getLong("status_id")))
                             .attempts(resultSet.getInt("retry_count"))
                             .nextAttemptAt(nextRetryAt == null ? null : nextRetryAt.toInstant())
@@ -277,5 +311,28 @@ public class PostgresOutboxStorage implements OutboxStorage {
                             .formatted(normalizedAggregateType));
         }
         return ids.getFirst();
+    }
+
+    private String writeMap(final Map<String, String> value) {
+        try {
+            return this.objectMapper.writeValueAsString(value == null ? Map.of() : value);
+        } catch (final JsonProcessingException exception) {
+            throw new IllegalStateException("Failed to serialize outbox metadata map", exception);
+        }
+    }
+
+    private Map<String, String> readMap(final String value) {
+        if (value == null || value.isBlank()) {
+            return Map.of();
+        }
+        try {
+            final Map<String, String> parsed = this.objectMapper.readValue(value, STRING_MAP_TYPE);
+            if (parsed == null || parsed.isEmpty()) {
+                return Map.of();
+            }
+            return Map.copyOf(parsed);
+        } catch (final JsonProcessingException exception) {
+            throw new IllegalStateException("Failed to deserialize outbox metadata map", exception);
+        }
     }
 }

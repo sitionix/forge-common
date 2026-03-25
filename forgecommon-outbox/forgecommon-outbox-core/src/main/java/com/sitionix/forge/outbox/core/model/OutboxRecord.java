@@ -5,6 +5,7 @@ import lombok.Getter;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.UUID;
 
 @Getter
 @Builder(toBuilder = true)
@@ -13,6 +14,7 @@ public class OutboxRecord {
     private final String id;
     private final String eventType;
     private final String payload;
+    private final UUID idempotencyId;
     private final Map<String, String> headers;
     private final Map<String, String> metadata;
     private final String traceId;

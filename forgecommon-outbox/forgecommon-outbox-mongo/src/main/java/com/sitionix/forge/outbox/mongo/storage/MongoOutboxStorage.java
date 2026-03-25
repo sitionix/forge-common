@@ -38,6 +38,7 @@ public class MongoOutboxStorage implements OutboxStorage {
         final Document document = new Document();
         document.put("eventType", record.getEventType());
         document.put("payload", record.getPayload());
+        document.put("idempotencyId", record.getIdempotencyId() == null ? null : record.getIdempotencyId().toString());
         document.put("headers", defaultMap(record.getHeaders()));
         document.put("metadata", defaultMap(record.getMetadata()));
         document.put("traceId", record.getTraceId());
@@ -172,6 +173,7 @@ public class MongoOutboxStorage implements OutboxStorage {
                 .id(this.asId(source.get("_id")))
                 .eventType(source.getString("eventType"))
                 .payload(source.getString("payload"))
+                .idempotencyId(this.readUuid(source.getString("idempotencyId")))
                 .headers(this.readStringMap(source, "headers"))
                 .metadata(this.readStringMap(source, "metadata"))
                 .traceId(source.getString("traceId"))
@@ -186,6 +188,13 @@ public class MongoOutboxStorage implements OutboxStorage {
                 .createdAt(createdAt == null ? null : createdAt.toInstant())
                 .updatedAt(updatedAt == null ? null : updatedAt.toInstant())
                 .build();
+    }
+
+    private java.util.UUID readUuid(final String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return java.util.UUID.fromString(value);
     }
 
     private Object objectIdOrString(final String id) {

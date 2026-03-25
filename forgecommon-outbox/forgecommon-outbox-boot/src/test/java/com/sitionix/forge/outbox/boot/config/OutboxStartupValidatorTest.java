@@ -1,6 +1,8 @@
 package com.sitionix.forge.outbox.boot.config;
 
 import com.sitionix.forge.outbox.core.model.OutboxDomainStore;
+import com.sitionix.forge.outbox.core.model.ForgeOutboxEventTypes;
+import com.sitionix.forge.outbox.core.port.OutboxPublisher;
 import com.sitionix.forge.outbox.core.port.OutboxStorage;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
@@ -25,6 +27,8 @@ class OutboxStartupValidatorTest {
                 properties,
                 beanFactory.getBeanProvider(OutboxStorage.class),
                 beanFactory.getBeanProvider(DataSource.class),
+                beanFactory.getBeanProvider(ForgeOutboxEventTypes.class),
+                beanFactory.getBeanProvider(OutboxPublisher.class),
                 beanFactory);
 
         //when
@@ -46,6 +50,8 @@ class OutboxStartupValidatorTest {
                 properties,
                 beanFactory.getBeanProvider(OutboxStorage.class),
                 beanFactory.getBeanProvider(DataSource.class),
+                beanFactory.getBeanProvider(ForgeOutboxEventTypes.class),
+                beanFactory.getBeanProvider(OutboxPublisher.class),
                 beanFactory);
 
         //when
@@ -61,6 +67,7 @@ class OutboxStartupValidatorTest {
         final ForgeOutboxProperties properties = new ForgeOutboxProperties();
         properties.setEnabled(true);
         properties.setDomainStore(OutboxDomainStore.POSTGRES);
+        properties.getWorker().setEnabled(false);
 
         final StaticListableBeanFactory beanFactory = new StaticListableBeanFactory();
         beanFactory.addBean("outboxStorage", mock(OutboxStorage.class));
@@ -69,6 +76,8 @@ class OutboxStartupValidatorTest {
                 properties,
                 beanFactory.getBeanProvider(OutboxStorage.class),
                 beanFactory.getBeanProvider(DataSource.class),
+                beanFactory.getBeanProvider(ForgeOutboxEventTypes.class),
+                beanFactory.getBeanProvider(OutboxPublisher.class),
                 beanFactory);
 
         //when
@@ -91,6 +100,8 @@ class OutboxStartupValidatorTest {
                 properties,
                 beanFactory.getBeanProvider(OutboxStorage.class),
                 beanFactory.getBeanProvider(DataSource.class),
+                beanFactory.getBeanProvider(ForgeOutboxEventTypes.class),
+                beanFactory.getBeanProvider(OutboxPublisher.class),
                 beanFactory);
 
         //when
@@ -99,5 +110,55 @@ class OutboxStartupValidatorTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("domain-store=NONE")
                 .hasMessageContaining("Set forge.outbox.domain-store explicitly");
+    }
+
+    @Test
+    void givenWorkerEnabledAndStoragePresentAndEventTypesMissing_whenValidatorRuns_thenFailFast() {
+        //given
+        final ForgeOutboxProperties properties = new ForgeOutboxProperties();
+        properties.setEnabled(true);
+        properties.setDomainStore(OutboxDomainStore.POSTGRES);
+
+        final StaticListableBeanFactory beanFactory = new StaticListableBeanFactory();
+        beanFactory.addBean("outboxStorage", mock(OutboxStorage.class));
+
+        final OutboxStartupValidator validator = new OutboxStartupValidator(
+                properties,
+                beanFactory.getBeanProvider(OutboxStorage.class),
+                beanFactory.getBeanProvider(DataSource.class),
+                beanFactory.getBeanProvider(ForgeOutboxEventTypes.class),
+                beanFactory.getBeanProvider(OutboxPublisher.class),
+                beanFactory);
+
+        //when
+        //then
+        assertThatThrownBy(validator::afterPropertiesSet)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("neither ForgeOutboxEventTypes nor OutboxPublisher bean is configured");
+    }
+
+    @Test
+    void givenWorkerEnabledAndCustomPublisherPresent_whenValidatorRuns_thenPass() {
+        //given
+        final ForgeOutboxProperties properties = new ForgeOutboxProperties();
+        properties.setEnabled(true);
+        properties.setDomainStore(OutboxDomainStore.POSTGRES);
+
+        final StaticListableBeanFactory beanFactory = new StaticListableBeanFactory();
+        beanFactory.addBean("outboxStorage", mock(OutboxStorage.class));
+        beanFactory.addBean("outboxPublisher", mock(OutboxPublisher.class));
+
+        final OutboxStartupValidator validator = new OutboxStartupValidator(
+                properties,
+                beanFactory.getBeanProvider(OutboxStorage.class),
+                beanFactory.getBeanProvider(DataSource.class),
+                beanFactory.getBeanProvider(ForgeOutboxEventTypes.class),
+                beanFactory.getBeanProvider(OutboxPublisher.class),
+                beanFactory);
+
+        //when
+        //then
+        assertThatCode(validator::afterPropertiesSet)
+                .doesNotThrowAnyException();
     }
 }

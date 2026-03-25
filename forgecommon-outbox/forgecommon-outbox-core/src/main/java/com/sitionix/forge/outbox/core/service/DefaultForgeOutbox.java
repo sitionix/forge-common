@@ -3,6 +3,7 @@ package com.sitionix.forge.outbox.core.service;
 import com.sitionix.forge.outbox.core.model.OutboxRecord;
 import com.sitionix.forge.outbox.core.port.ForgeOutboxPayload;
 import com.sitionix.forge.outbox.core.port.ForgeOutbox;
+import com.sitionix.forge.outbox.core.port.OutboxSendMetadata;
 import com.sitionix.forge.outbox.core.port.OutboxPayloadCodec;
 import com.sitionix.forge.outbox.core.port.OutboxStorage;
 
@@ -24,26 +25,30 @@ public class DefaultForgeOutbox<P extends ForgeOutboxPayload> implements ForgeOu
     }
 
     @Override
-    public void send(final P payload) {
-        final String eventType = this.validateAndResolveEventType(payload);
-        final OutboxRecord outboxRecord = this.outboxRecordFactory.create(payload, eventType);
+    public void send(final P payload,
+                     final OutboxSendMetadata metadata) {
+        this.validatePayload(payload);
+        final OutboxSendMetadata validatedMetadata = this.validateMetadata(metadata);
         final String encodedPayload = this.resolvePayload(payload);
-        this.storage.enqueue(this.outboxRecordFactory.withPayload(outboxRecord, encodedPayload));
+        final OutboxRecord outboxRecord = this.outboxRecordFactory.create(validatedMetadata, encodedPayload);
+        this.storage.enqueue(outboxRecord);
     }
 
-    private String validateAndResolveEventType(final P payload) {
+    private void validatePayload(final P payload) {
         if (payload == null) {
             throw new IllegalArgumentException("Outbox payload is required");
         }
-        final String eventType = this.resolveEventType(payload);
+    }
+
+    private OutboxSendMetadata validateMetadata(final OutboxSendMetadata metadata) {
+        if (metadata == null) {
+            throw new IllegalArgumentException("Outbox metadata is required");
+        }
+        final String eventType = metadata.eventType();
         if (eventType == null || eventType.isBlank()) {
             throw new IllegalArgumentException("Outbox eventType is required");
         }
-        return eventType;
-    }
-
-    private String resolveEventType(final P payload) {
-        return payload.eventType();
+        return metadata;
     }
 
     private String resolvePayload(final P payload) {

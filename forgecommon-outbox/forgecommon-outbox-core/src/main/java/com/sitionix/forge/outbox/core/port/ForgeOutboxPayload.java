@@ -6,14 +6,18 @@ import java.time.Instant;
 import java.util.Map;
 
 /**
- * Payload contract that describes how domain data is mapped into an outbox record.
+ * Marker contract for payloads that can be persisted into the outbox.
+ *
+ * Legacy metadata methods remain for backward compatibility with services that
+ * still use the older {@code forgeOutbox.send(payload)} style. New code should
+ * prefer {@link ForgeOutbox#send(ForgeOutboxPayload, OutboxSendMetadata)} and
+ * keep transport metadata outside payloads.
  */
 public interface ForgeOutboxPayload {
 
-    /**
-     * @return logical outbox event type used for routing to publishers
-     */
-    String eventType();
+    default String eventType() {
+        return null;
+    }
 
     default Map<String, String> headers() {
         return Map.of();
@@ -31,9 +35,6 @@ public interface ForgeOutboxPayload {
         return null;
     }
 
-    /**
-     * @return aggregate type name for storage/routing
-     */
     default String aggregateTypeValue() {
         final OutboxAggregateType aggregateType = this.aggregateType();
         return aggregateType == null ? null : aggregateType.getDescription();
