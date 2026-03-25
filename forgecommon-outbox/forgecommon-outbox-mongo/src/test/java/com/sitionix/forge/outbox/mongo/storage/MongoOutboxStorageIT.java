@@ -19,6 +19,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -62,6 +63,7 @@ class MongoOutboxStorageIT {
         final OutboxRecord outboxRecord = OutboxRecord.builder()
                 .eventType("EMAIL_VERIFY")
                 .payload("{}")
+                .idempotencyId(UUID.fromString("11111111-1111-1111-1111-111111111111"))
                 .headers(Map.of("h", "1"))
                 .metadata(Map.of("m", "1"))
                 .traceId("trace-1")
@@ -99,6 +101,7 @@ class MongoOutboxStorageIT {
                 .getString("status");
 
         assertThat(claimed).hasSize(1);
+        assertThat(claimed.getFirst().getIdempotencyId()).isEqualTo(UUID.fromString("11111111-1111-1111-1111-111111111111"));
         assertThat(status).isEqualTo("SENT");
     }
 

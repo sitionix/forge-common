@@ -2,12 +2,13 @@ package com.sitionix.forge.outbox.core.service;
 
 import com.sitionix.forge.outbox.core.model.OutboxRecord;
 import com.sitionix.forge.outbox.core.model.OutboxStatus;
-import com.sitionix.forge.outbox.core.port.ForgeOutboxPayload;
+import com.sitionix.forge.outbox.core.port.OutboxSendMetadata;
 
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 
 public class OutboxRecordFactory {
 
@@ -17,35 +18,32 @@ public class OutboxRecordFactory {
         this.clock = Objects.requireNonNull(clock, "clock is required");
     }
 
-    public OutboxRecord create(final ForgeOutboxPayload payload,
-                               final String eventType) {
+    public OutboxRecord create(final OutboxSendMetadata sendMetadata,
+                               final String encodedPayload) {
+        Objects.requireNonNull(sendMetadata, "sendMetadata is required");
+        Objects.requireNonNull(encodedPayload, "encodedPayload is required");
         final Instant now = Instant.now(this.clock);
-        final String aggregateType = this.normalize(payload.aggregateTypeValue());
-        final Long aggregateId = payload.aggregateId();
+        final String aggregateType = this.normalize(sendMetadata.aggregateType());
+        final Long aggregateId = sendMetadata.aggregateId();
+        final String traceId = this.normalize(sendMetadata.traceId());
 
         return OutboxRecord.builder()
-                .eventType(eventType)
-                .payload(null)
-                .headers(defaultMap(payload.headers()))
-                .metadata(defaultMap(payload.metadata()))
-                .traceId(payload.traceId())
+                .eventType(this.normalize(sendMetadata.eventType()))
+                .payload(encodedPayload)
+                .idempotencyId(sendMetadata.idempotencyId() == null ? UUID.randomUUID() : sendMetadata.idempotencyId())
+                .headers(defaultMap(sendMetadata.headers()))
+                .metadata(defaultMap(sendMetadata.metadata()))
+                .traceId(traceId)
                 .aggregateType(aggregateType)
                 .aggregateId(aggregateId)
-                .initiatorType(payload.initiatorType())
-                .initiatorId(payload.initiatorId())
+                .initiatorType(this.normalize(sendMetadata.initiatorType()))
+                .initiatorId(this.normalize(sendMetadata.initiatorId()))
                 .status(OutboxStatus.PENDING)
                 .attempts(0)
-                .nextAttemptAt(payload.nextAttemptAt() == null ? now : payload.nextAttemptAt())
+                .nextAttemptAt(sendMetadata.nextAttemptAt() == null ? now : sendMetadata.nextAttemptAt())
                 .lastError(null)
                 .createdAt(now)
                 .updatedAt(now)
-                .build();
-    }
-
-    public OutboxRecord withPayload(final OutboxRecord outboxRecord,
-                                    final String encodedPayload) {
-        return outboxRecord.toBuilder()
-                .payload(encodedPayload)
                 .build();
     }
 

@@ -2,8 +2,10 @@ package com.sitionix.forge.outbox.boot.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sitionix.forge.outbox.boot.codec.JacksonOutboxPayloadCodec;
+import com.sitionix.forge.outbox.boot.service.SpringEnumOutboxPublisher;
 import com.sitionix.forge.outbox.boot.worker.ScheduledOutboxCleanup;
 import com.sitionix.forge.outbox.boot.worker.ScheduledOutboxWorker;
+import com.sitionix.forge.outbox.core.model.ForgeOutboxEventTypes;
 import com.sitionix.forge.outbox.core.model.OutboxWorkerPolicy;
 import com.sitionix.forge.outbox.core.port.ForgeOutbox;
 import com.sitionix.forge.outbox.core.port.ForgeOutboxEventPublisher;
@@ -12,7 +14,6 @@ import com.sitionix.forge.outbox.core.port.ForgeOutboxWorker;
 import com.sitionix.forge.outbox.core.port.OutboxPayloadCodec;
 import com.sitionix.forge.outbox.core.port.OutboxPublisher;
 import com.sitionix.forge.outbox.core.port.OutboxStorage;
-import com.sitionix.forge.outbox.core.service.CompositeOutboxPublisher;
 import com.sitionix.forge.outbox.core.service.DefaultForgeOutbox;
 import com.sitionix.forge.outbox.core.service.OutboxDispatcher;
 import org.springframework.beans.factory.ObjectProvider;
@@ -29,8 +30,6 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 
 import javax.sql.DataSource;
 import java.time.Clock;
-import java.util.List;
-
 @AutoConfiguration(afterName = {
         "com.sitionix.forge.outbox.postgres.config.ForgeOutboxPostgresAutoConfiguration",
         "com.sitionix.forge.outbox.mongo.config.ForgeOutboxMongoAutoConfiguration"
@@ -58,8 +57,16 @@ public class ForgeOutboxAutoConfiguration {
     public OutboxStartupValidator outboxStartupValidator(final ForgeOutboxProperties properties,
                                                          final ObjectProvider<OutboxStorage> outboxStorageProvider,
                                                          final ObjectProvider<DataSource> dataSourceProvider,
+                                                         final ObjectProvider<ForgeOutboxEventTypes> eventTypesProvider,
+                                                         final ObjectProvider<OutboxPublisher> outboxPublisherProvider,
                                                          final ListableBeanFactory beanFactory) {
-        return new OutboxStartupValidator(properties, outboxStorageProvider, dataSourceProvider, beanFactory);
+        return new OutboxStartupValidator(
+                properties,
+                outboxStorageProvider,
+                dataSourceProvider,
+                eventTypesProvider,
+                outboxPublisherProvider,
+                beanFactory);
     }
 
     @Configuration(proxyBeanMethods = false)
@@ -76,10 +83,11 @@ public class ForgeOutboxAutoConfiguration {
 
         @Bean
         @ConditionalOnMissingBean(OutboxPublisher.class)
-        public OutboxPublisher outboxPublisher(final ObjectProvider<ForgeOutboxEventPublisher<?>> publishersProvider,
-                                              final OutboxPayloadCodec outboxPayloadCodec) {
-            final List<ForgeOutboxEventPublisher<?>> publishers = publishersProvider.orderedStream().toList();
-            return new CompositeOutboxPublisher(publishers, outboxPayloadCodec);
+        @ConditionalOnBean(ForgeOutboxEventTypes.class)
+        public OutboxPublisher outboxPublisher(final ForgeOutboxEventTypes eventTypes,
+                                               final ListableBeanFactory beanFactory,
+                                               final OutboxPayloadCodec outboxPayloadCodec) {
+            return new SpringEnumOutboxPublisher(eventTypes, beanFactory, outboxPayloadCodec);
         }
 
         @Bean
