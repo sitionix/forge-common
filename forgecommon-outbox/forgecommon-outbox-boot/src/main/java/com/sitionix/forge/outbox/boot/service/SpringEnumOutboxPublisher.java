@@ -11,12 +11,10 @@ import com.sitionix.forge.outbox.core.port.OutboxPublisher;
 import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.core.ResolvableType;
 
-import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 public class SpringEnumOutboxPublisher implements OutboxPublisher {
@@ -108,24 +106,23 @@ public class SpringEnumOutboxPublisher implements OutboxPublisher {
         final Class<P> payloadClass = (Class<P>) rawBinding.payloadClass();
         final ForgeOutboxEventPublisher<P> publisher = (ForgeOutboxEventPublisher<P>) rawBinding.publisher();
         final P payload = this.outboxPayloadCodec.deserialize(record.getPayload(), payloadClass);
+        final java.util.UUID idempotencyId = Objects.requireNonNull(record.getIdempotencyId(), "idempotencyId is required");
 
         final Event<P> event = Event.<P>builder()
                 .id(record.getId())
                 .payload(payload)
-                .idempotencyId(this.resolveIdempotencyId(record, normalizedEventType))
+                .idempotencyId(idempotencyId)
                 .createdAt(record.getCreatedAt())
                 .eventType(normalizedEventType)
+                .headers(record.getHeaders())
+                .metadata(record.getMetadata())
+                .traceId(record.getTraceId())
+                .aggregateType(record.getAggregateType())
+                .aggregateId(record.getAggregateId())
+                .initiatorType(record.getInitiatorType())
+                .initiatorId(record.getInitiatorId())
                 .build();
         publisher.publish(event);
-    }
-
-    private UUID resolveIdempotencyId(final OutboxRecord record,
-                                      final String eventType) {
-        final String value = String.join("|",
-                eventType == null ? "" : eventType,
-                record.getId() == null ? "" : record.getId(),
-                record.getCreatedAt() == null ? "" : record.getCreatedAt().toString());
-        return UUID.nameUUIDFromBytes(value.getBytes(StandardCharsets.UTF_8));
     }
 
     private String normalize(final String value) {

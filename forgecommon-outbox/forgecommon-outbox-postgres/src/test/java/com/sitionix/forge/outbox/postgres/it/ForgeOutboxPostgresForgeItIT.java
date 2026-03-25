@@ -24,7 +24,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -62,6 +64,8 @@ class ForgeOutboxPostgresForgeItIT {
                                 .cleanupPolicy(CleanupPolicy.DELETE_ALL)
                                 .build()));
         SuccessPublisher.PUBLISHED_EVENT_TYPES.clear();
+        SuccessPublisher.PUBLISHED_IDEMPOTENCY_IDS.clear();
+        SuccessPublisher.PUBLISHED_TRACE_IDS.clear();
     }
 
     @Test
@@ -89,10 +93,14 @@ class ForgeOutboxPostgresForgeItIT {
         assertThat(summary.getSent()).isEqualTo(1);
         assertThat(summary.getFailed()).isEqualTo(0);
         assertThat(SuccessPublisher.PUBLISHED_EVENT_TYPES).containsExactly("EMAIL_VERIFY");
+        assertThat(SuccessPublisher.PUBLISHED_IDEMPOTENCY_IDS).hasSize(1);
+        assertThat(SuccessPublisher.PUBLISHED_IDEMPOTENCY_IDS.getFirst()).isNotNull();
+        assertThat(SuccessPublisher.PUBLISHED_TRACE_IDS).containsExactly("trace-1");
         this.testManager.postgresql().get(ForgeOutboxEventEntity.class)
                 .hasSize(1)
                 .singleElement()
                 .andExpected(entity -> Objects.equals(entity.getEventType(), "EMAIL_VERIFY"))
+                .andExpected(entity -> Objects.nonNull(entity.getIdempotencyId()))
                 .andExpected(entity -> Objects.equals(entity.getStatusId(), OutboxStatus.SENT.getId()))
                 .andExpected(entity -> Objects.equals(entity.getRetryCount(), 0))
                 .assertEntity();
@@ -298,10 +306,14 @@ class ForgeOutboxPostgresForgeItIT {
     static class SuccessPublisher implements ForgeOutboxEventPublisher<SuccessPayload> {
 
         static final List<String> PUBLISHED_EVENT_TYPES = new CopyOnWriteArrayList<>();
+        static final List<UUID> PUBLISHED_IDEMPOTENCY_IDS = new CopyOnWriteArrayList<>();
+        static final List<String> PUBLISHED_TRACE_IDS = new CopyOnWriteArrayList<>();
 
         @Override
         public void publish(final Event<SuccessPayload> event) {
             PUBLISHED_EVENT_TYPES.add(event.getEventType());
+            PUBLISHED_IDEMPOTENCY_IDS.add(event.getIdempotencyId());
+            PUBLISHED_TRACE_IDS.add(event.getTraceId());
         }
     }
 
@@ -326,7 +338,17 @@ class ForgeOutboxPostgresForgeItIT {
     }
 
     private OutboxSendMetadata metadata(final String eventType) {
-        return new OutboxSendMetadata(eventType);
+        return new OutboxSendMetadata(
+                eventType,
+                null,
+                "trace-1",
+                Map.of("h", "1"),
+                Map.of("m", "1"),
+                null,
+                null,
+                null,
+                null,
+                null);
     }
 
     private enum TestOutboxEventType implements ForgeOutboxEventType {

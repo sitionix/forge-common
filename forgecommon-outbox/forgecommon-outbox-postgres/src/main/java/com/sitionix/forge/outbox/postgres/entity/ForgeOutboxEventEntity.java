@@ -6,6 +6,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 import java.time.Instant;
+import java.util.UUID;
 
 @Entity
 @Table(name = "forge_outbox_events")
@@ -19,6 +20,9 @@ public class ForgeOutboxEventEntity {
 
     @Column(name = "payload", columnDefinition = "TEXT")
     private String payload;
+
+    @Column(name = "idempotency_id")
+    private UUID idempotencyId;
 
     @Column(name = "trace_id")
     private String traceId;
@@ -72,6 +76,14 @@ public class ForgeOutboxEventEntity {
 
     public void setPayload(final String payload) {
         this.payload = payload;
+    }
+
+    public UUID getIdempotencyId() {
+        return this.idempotencyId;
+    }
+
+    public void setIdempotencyId(final UUID idempotencyId) {
+        this.idempotencyId = idempotencyId;
     }
 
     public String getTraceId() {

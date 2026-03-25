@@ -19,7 +19,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.ResolvableType;
 
 import java.time.Instant;
-import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -101,8 +101,15 @@ class SpringEnumOutboxPublisherTest {
         assertThat(actual.getEventType()).isEqualTo("SITE_CREATED");
         assertThat(actual.getId()).isEqualTo("evt-1");
         assertThat(actual.getPayload()).isEqualTo(this.payload);
-        assertThat(actual.getIdempotencyId()).isEqualTo(this.resolveIdempotencyId("evt-1", "SITE_CREATED"));
+        assertThat(actual.getIdempotencyId()).isEqualTo(UUID.fromString("11111111-1111-1111-1111-111111111111"));
         assertThat(actual.getCreatedAt()).isEqualTo(Instant.parse("2026-01-01T10:00:00Z"));
+        assertThat(actual.getHeaders()).isEqualTo(Map.of("h", "1"));
+        assertThat(actual.getMetadata()).isEqualTo(Map.of("m", "1"));
+        assertThat(actual.getTraceId()).isEqualTo("trace-1");
+        assertThat(actual.getAggregateType()).isEqualTo("USER");
+        assertThat(actual.getAggregateId()).isEqualTo(101L);
+        assertThat(actual.getInitiatorType()).isEqualTo("SYSTEM");
+        assertThat(actual.getInitiatorId()).isEqualTo("500");
     }
 
     @Test
@@ -177,14 +184,16 @@ class SpringEnumOutboxPublisherTest {
                 .id("evt-1")
                 .eventType(eventType)
                 .payload("{\"siteId\":1}")
+                .idempotencyId(UUID.fromString("11111111-1111-1111-1111-111111111111"))
+                .headers(Map.of("h", "1"))
+                .metadata(Map.of("m", "1"))
+                .traceId("trace-1")
+                .aggregateType("USER")
+                .aggregateId(101L)
+                .initiatorType("SYSTEM")
+                .initiatorId("500")
                 .createdAt(Instant.parse("2026-01-01T10:00:00Z"))
                 .build();
-    }
-
-    private UUID resolveIdempotencyId(final String id,
-                                      final String eventType) {
-        final String value = String.join("|", eventType, id, "2026-01-01T10:00:00Z");
-        return UUID.nameUUIDFromBytes(value.getBytes(StandardCharsets.UTF_8));
     }
 
     private interface TestPayload extends ForgeOutboxPayload {

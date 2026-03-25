@@ -17,6 +17,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -50,7 +51,9 @@ class DefaultForgeOutboxTest {
     void givenPayloadWithAllOutboxFields_whenSend_thenPersistPendingRecord() {
         //given
         final SendPayload payload = new SendPayload("value-1");
+        final UUID idempotencyId = UUID.fromString("11111111-1111-1111-1111-111111111111");
         final OutboxSendMetadata metadata = new OutboxSendMetadata("EMAIL_VERIFY",
+                idempotencyId,
                 "trace-1",
                 Map.of("header-1", "value-1"),
                 Map.of("meta-1", "value-1"),
@@ -72,6 +75,7 @@ class DefaultForgeOutboxTest {
         final OutboxRecord actual = argumentCaptor.getValue();
         assertThat(actual.getEventType()).isEqualTo("EMAIL_VERIFY");
         assertThat(actual.getPayload()).isEqualTo("{\"value\":1}");
+        assertThat(actual.getIdempotencyId()).isEqualTo(idempotencyId);
         assertThat(actual.getHeaders()).isEqualTo(Map.of("header-1", "value-1"));
         assertThat(actual.getMetadata()).isEqualTo(Map.of("meta-1", "value-1"));
         assertThat(actual.getTraceId()).isEqualTo("trace-1");
@@ -87,6 +91,7 @@ class DefaultForgeOutboxTest {
         //given
         final SendPayload payload = new SendPayload("value-1");
         final OutboxSendMetadata metadata = new OutboxSendMetadata("EMAIL_VERIFY",
+                null,
                 null,
                 null,
                 null,
@@ -108,6 +113,7 @@ class DefaultForgeOutboxTest {
         final OutboxRecord actual = argumentCaptor.getValue();
         assertThat(actual.getAggregateType()).isNull();
         assertThat(actual.getAggregateId()).isNull();
+        assertThat(actual.getIdempotencyId()).isNotNull();
         assertThat(actual.getInitiatorType()).isEqualTo("SYSTEM");
         assertThat(actual.getInitiatorId()).isEqualTo("1");
         assertThat(actual.getHeaders()).isEqualTo(Map.of());
@@ -132,6 +138,7 @@ class DefaultForgeOutboxTest {
         final OutboxRecord actual = argumentCaptor.getValue();
         assertThat(actual.getEventType()).isEqualTo("EMAIL_VERIFY");
         assertThat(actual.getPayload()).isEqualTo("{\"value\":1}");
+        assertThat(actual.getIdempotencyId()).isNotNull();
         assertThat(actual.getHeaders()).isEqualTo(Map.of("header-1", "value-1"));
         assertThat(actual.getMetadata()).isEqualTo(Map.of("meta-1", "value-1"));
         assertThat(actual.getTraceId()).isEqualTo("trace-1");

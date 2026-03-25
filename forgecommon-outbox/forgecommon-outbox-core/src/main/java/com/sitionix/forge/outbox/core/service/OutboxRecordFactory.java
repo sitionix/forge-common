@@ -8,6 +8,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 
 public class OutboxRecordFactory {
 
@@ -29,6 +30,7 @@ public class OutboxRecordFactory {
         return OutboxRecord.builder()
                 .eventType(this.normalize(sendMetadata.eventType()))
                 .payload(encodedPayload)
+                .idempotencyId(sendMetadata.idempotencyId() == null ? UUID.randomUUID() : sendMetadata.idempotencyId())
                 .headers(defaultMap(sendMetadata.headers()))
                 .metadata(defaultMap(sendMetadata.metadata()))
                 .traceId(traceId)

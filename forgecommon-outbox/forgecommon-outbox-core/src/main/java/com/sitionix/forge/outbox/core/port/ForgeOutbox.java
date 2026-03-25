@@ -20,6 +20,7 @@ public interface ForgeOutbox<P extends ForgeOutboxPayload> {
         }
         send(payload, new OutboxSendMetadata(
                 payload.eventType(),
+                null,
                 payload.traceId(),
                 payload.headers(),
                 payload.metadata(),
